@@ -3,6 +3,8 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { connectAngelOne } = require('./services/angelone');
+const positionsRoute = require('./routes/positions');
+const monitorRoute = require('./routes/monitor');
 
 dotenv.config();
 
@@ -19,6 +21,10 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // Connect to Angel One
 connectAngelOne();
+
+// Routes
+app.use('/api/positions', positionsRoute);
+app.use('/api/monitor', monitorRoute);
 
 app.get('/', (req, res) => {
   res.send('Trading App Backend is running!');
