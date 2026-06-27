@@ -2,9 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
-const { connectAngelOne } = require('./services/angelone');
 const positionsRoute = require('./routes/positions');
 const monitorRoute = require('./routes/monitor');
+const authRoute = require('./routes/auth');
 
 dotenv.config();
 
@@ -19,12 +19,10 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected successfully!'))
   .catch((err) => console.log('MongoDB connection error:', err));
 
-// Connect to Angel One
-connectAngelOne();
-
 // Routes
 app.use('/api/positions', positionsRoute);
 app.use('/api/monitor', monitorRoute);
+app.use('/api/auth', authRoute);
 
 app.get('/', (req, res) => {
   res.send('Trading App Backend is running!');
