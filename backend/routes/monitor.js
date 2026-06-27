@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { startPnLMonitor, stopMonitor, isMonitoring } = require('../services/pnlMonitor');
+const { 
+  startPnLMonitor, 
+  stopMonitor, 
+  isMonitoring,
+  updatePositionSettings 
+} = require('../services/pnlMonitor');
 
 // Start monitoring
 router.post('/start', (req, res) => {
@@ -42,6 +47,25 @@ router.get('/status', (req, res) => {
   res.json({
     success: true,
     isMonitoring: isMonitoring()
+  });
+});
+
+// Update individual position settings
+router.post('/position-settings', (req, res) => {
+  const { symbol, target, stopLoss } = req.body;
+
+  if (!symbol || !target || !stopLoss) {
+    return res.json({
+      success: false,
+      message: 'Symbol, target and stopLoss are required!'
+    });
+  }
+
+  updatePositionSettings(symbol, Number(target), Number(stopLoss));
+
+  res.json({
+    success: true,
+    message: `Settings updated for ${symbol}!`
   });
 });
 
