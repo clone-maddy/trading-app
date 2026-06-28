@@ -6,6 +6,7 @@ const positionsRoute = require('./routes/positions');
 const monitorRoute = require('./routes/monitor');
 const authRoute = require('./routes/auth');
 const virtualTradeRoute = require('./routes/virtualTrade');
+const optionChainRoute = require('./routes/optionChain');
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use('/api/positions', positionsRoute);
 app.use('/api/monitor', monitorRoute);
 app.use('/api/auth', authRoute);
 app.use('/api/virtual', virtualTradeRoute);
+app.use('/api/options', optionChainRoute);
 
 app.get('/', (req, res) => {
   res.send('Trading App Backend is running!');
