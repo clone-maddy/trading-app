@@ -1,15 +1,20 @@
 const express = require('express');
 const router = express.Router();
+const authMiddleware = require('../middleware/auth');
 const { 
   startPnLMonitor, 
   stopMonitor, 
   isMonitoring,
-  updatePositionSettings 
+  updatePositionSettings,
+  getMonitorSettings
 } = require('../services/pnlMonitor');
+
+// Protect all monitor routes with authentication middleware
+router.use(authMiddleware);
 
 // Start monitoring
 router.post('/start', (req, res) => {
-  const { targetProfit, stopLoss, partialProfitAt, partialProfitPercent } = req.body;
+  const { targetProfit, stopLoss, partialProfitAt, partialProfitPercent, useTrailingSL, trailAmount, mode = 'real' } = req.body;
 
   if (!targetProfit || !stopLoss) {
     return res.json({
@@ -18,41 +23,53 @@ router.post('/start', (req, res) => {
     });
   }
 
-  if (isMonitoring()) {
+  if (isMonitoring(mode)) {
     return res.json({
       success: false,
-      message: 'Monitor is already running!'
+      message: `${mode.toUpperCase()} monitor is already running!`
     });
   }
 
-  startPnLMonitor({ targetProfit, stopLoss, partialProfitAt, partialProfitPercent });
+  startPnLMonitor({ 
+    targetProfit, 
+    stopLoss, 
+    partialProfitAt, 
+    partialProfitPercent,
+    useTrailingSL,
+    trailAmount: Number(trailAmount || 0),
+    mode,
+    userId: req.userId
+  });
 
   res.json({
     success: true,
-    message: `Monitor started! Target: ₹${targetProfit}, Stop Loss: ₹${stopLoss}`
+    message: `Monitor started! Mode: ${mode.toUpperCase()}, Target: ₹${targetProfit}, Stop Loss: ₹${stopLoss}`
   });
 });
 
 // Stop monitoring
 router.post('/stop', (req, res) => {
-  stopMonitor();
+  const { mode = 'real' } = req.body;
+  stopMonitor(mode);
   res.json({
     success: true,
-    message: 'Monitor stopped!'
+    message: `${mode.toUpperCase()} monitor stopped!`
   });
 });
 
 // Check status
 router.get('/status', (req, res) => {
+  const { mode = 'real' } = req.query;
   res.json({
     success: true,
-    isMonitoring: isMonitoring()
+    isMonitoring: isMonitoring(mode),
+    settings: getMonitorSettings(mode)
   });
 });
 
 // Update individual position settings
 router.post('/position-settings', (req, res) => {
-  const { symbol, target, stopLoss } = req.body;
+  const { symbol, target, stopLoss, useTrailingSL, trailAmount, mode = 'real' } = req.body;
 
   if (!symbol || !target || !stopLoss) {
     return res.json({
@@ -61,11 +78,11 @@ router.post('/position-settings', (req, res) => {
     });
   }
 
-  updatePositionSettings(symbol, Number(target), Number(stopLoss));
+  updatePositionSettings(mode, symbol, Number(target), Number(stopLoss), !!useTrailingSL, Number(trailAmount || 1));
 
   res.json({
     success: true,
-    message: `Settings updated for ${symbol}!`
+    message: `Settings updated for ${symbol} in ${mode.toUpperCase()} mode!`
   });
 });
 

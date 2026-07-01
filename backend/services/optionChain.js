@@ -56,7 +56,7 @@ const getOptionChain = async (indexName, expiry) => {
       const batch = tokens.slice(i, i + batchSize);
       const response = await axios.post(
         'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
-        { mode: 'LTP', exchangeTokens: { 'NFO': batch } },
+        { mode: 'FULL', exchangeTokens: { 'NFO': batch } },
         {
           headers: {
             'Authorization': `Bearer ${authToken}`,
@@ -74,7 +74,13 @@ const getOptionChain = async (indexName, expiry) => {
       
       if (response.data.status && response.data.data.fetched) {
         response.data.data.fetched.forEach(item => {
-          livePrices[item.symbolToken] = item.ltp;
+          livePrices[item.symbolToken] = {
+            ltp: item.ltp || 0,
+            oi: item.openInterest || 0,
+            volume: item.tradeVolume || 0,
+            bid: item.depth?.buy?.[0]?.price || 0,
+            ask: item.depth?.sell?.[0]?.price || 0
+          };
         });
       }
     }
@@ -98,13 +104,21 @@ const getOptionChain = async (indexName, expiry) => {
       ce: ce ? {
         token: ce.token,
         symbol: ce.symbol,
-        ltp: livePrices[ce.token] || 0,
+        ltp: livePrices[ce.token]?.ltp || 0,
+        oi: livePrices[ce.token]?.oi || 0,
+        volume: livePrices[ce.token]?.volume || 0,
+        bid: livePrices[ce.token]?.bid || 0,
+        ask: livePrices[ce.token]?.ask || 0,
         lotSize: parseInt(ce.lotsize)
       } : null,
       pe: pe ? {
         token: pe.token,
         symbol: pe.symbol,
-        ltp: livePrices[pe.token] || 0,
+        ltp: livePrices[pe.token]?.ltp || 0,
+        oi: livePrices[pe.token]?.oi || 0,
+        volume: livePrices[pe.token]?.volume || 0,
+        bid: livePrices[pe.token]?.bid || 0,
+        ask: livePrices[pe.token]?.ask || 0,
         lotSize: parseInt(pe.lotsize)
       } : null
     };
@@ -145,4 +159,108 @@ const getLivePrice = async (token) => {
   }
 };
 
-module.exports = { getExpiryDates, getOptionChain, getLivePrice };
+// Get live spot price of index
+const getIndexSpotPrice = async (indexName) => {
+  const tokenMap = {
+    'NIFTY': '99926000',
+    'BANKNIFTY': '99926009',
+    'FINNIFTY': '99926037'
+  };
+  const token = tokenMap[indexName.toUpperCase()];
+  if (!token) return 0;
+
+  try {
+    const { authToken } = await connectAngelOne();
+    const response = await axios.post(
+      'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
+      { mode: 'LTP', exchangeTokens: { 'NSE': [token] } },
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-UserType': 'USER',
+          'X-SourceID': 'WEB',
+          'X-ClientLocalIP': '192.168.1.5',
+          'X-ClientPublicIP': '106.193.147.98',
+          'X-MACAddress': 'fe80::216e:6507:4b90:3719',
+          'X-PrivateKey': process.env.ANGEL_API_KEY
+        }
+      }
+    );
+
+    if (response.data.status && response.data.data.fetched.length > 0) {
+      return response.data.data.fetched[0].ltp;
+    }
+    return 0;
+  } catch (error) {
+    console.log(`Error fetching spot price for ${indexName}:`, error.message);
+    return 0;
+  }
+};
+
+const formatDateForAngel = (date) => {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const min = String(date.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+};
+
+const getCandleData = async (symboltoken, exchange, interval) => {
+  try {
+    const { authToken } = await connectAngelOne();
+    
+    const now = new Date();
+    const toDateStr = formatDateForAngel(now);
+    
+    let fromDate = new Date();
+    if (interval === 'ONE_DAY') {
+      fromDate.setDate(fromDate.getDate() - 90); // Last 90 days
+    } else if (interval === 'ONE_HOUR') {
+      fromDate.setDate(fromDate.getDate() - 15); // Last 15 days
+    } else if (interval === 'FIFTEEN_MINUTE') {
+      fromDate.setDate(fromDate.getDate() - 5);  // Last 5 days
+    } else {
+      fromDate.setDate(fromDate.getDate() - 2);  // Last 2 days (for 1m and 5m)
+    }
+    const fromDateStr = formatDateForAngel(fromDate);
+    
+    console.log(`[Historical API] Fetching ${interval} for token ${symboltoken} (${exchange}) from ${fromDateStr} to ${toDateStr}`);
+
+    const response = await axios.post(
+      'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
+      {
+        exchange,
+        symboltoken,
+        interval,
+        fromdate: fromDateStr,
+        todate: toDateStr
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-UserType': 'USER',
+          'X-SourceID': 'WEB',
+          'X-ClientLocalIP': '192.168.1.5',
+          'X-ClientPublicIP': '106.193.147.98',
+          'X-MACAddress': 'fe80::216e:6507:4b90:3719',
+          'X-PrivateKey': process.env.ANGEL_API_KEY
+        }
+      }
+    );
+    
+    if (response.data && response.data.status) {
+      return response.data.data;
+    }
+    throw new Error(response.data.message || 'Failed to fetch candle data');
+  } catch (error) {
+    console.log('Error fetching candle data:', error.message);
+    throw error;
+  }
+};
+
+module.exports = { getExpiryDates, getOptionChain, getLivePrice, getIndexSpotPrice, getCandleData };

@@ -9,7 +9,7 @@ const {
   closeTrade,
   getTradeHistory,
   resetPortfolio
-} = require('../controllers/virtualTradeController');
+} = require('../controllers/VirtualTradeController');
 
 // All routes protected by auth
 router.use(authMiddleware);

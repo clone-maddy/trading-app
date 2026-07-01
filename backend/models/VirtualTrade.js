@@ -31,6 +31,15 @@ const VirtualTradeSchema = new mongoose.Schema({
     enum: ['CE', 'PE'],
     required: true
   },
+  side: {
+    type: String,
+    enum: ['BUY', 'SELL'],
+    default: 'BUY'
+  },
+  token: {
+    type: String,
+    default: null
+  },
   status: {
     type: String,
     enum: ['OPEN', 'CLOSED'],
@@ -39,6 +48,15 @@ const VirtualTradeSchema = new mongoose.Schema({
   pnl: {
     type: Number,
     default: 0
+  },
+  exitReason: {
+    type: String,
+    enum: ['MANUAL', 'TARGET_HIT', 'STOPLOSS_HIT', 'PARTIAL_EXIT'],
+    default: null
+  },
+  exitSummary: {
+    type: String,
+    default: null
   },
   createdAt: {
     type: Date,

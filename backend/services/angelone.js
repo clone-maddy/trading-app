@@ -57,13 +57,13 @@ const connectAngelOne = async () => {
 
 const getPositions = async () => {
   try {
-    const { authToken } = await connectAngelOne();
+    const tokens = await connectAngelOne();
 
     const response = await axios.get(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getPosition',
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${tokens.authToken}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-UserType': 'USER',
@@ -79,6 +79,13 @@ const getPositions = async () => {
     return response.data;
 
   } catch (error) {
+    // Clear cached token on auth errors so next call re-authenticates
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      console.log('Auth token expired/invalid, clearing cache for re-login');
+      authToken = null;
+      feedToken = null;
+      lastConnected = null;
+    }
     console.log('Get positions error:', error.message);
     throw error;
   }
@@ -114,4 +121,33 @@ const placeOrder = async (orderParams) => {
   }
 };
 
-module.exports = { connectAngelOne, getPositions, placeOrder };
+const getTradeBook = async () => {
+  try {
+    const { authToken } = await connectAngelOne();
+
+    const response = await axios.get(
+      'https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getTradeBook',
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-UserType': 'USER',
+          'X-SourceID': 'WEB',
+          'X-ClientLocalIP': '192.168.1.5',
+          'X-ClientPublicIP': '106.193.147.98',
+          'X-MACAddress': 'fe80::216e:6507:4b90:3719',
+          'X-PrivateKey': process.env.ANGEL_API_KEY
+        }
+      }
+    );
+
+    return response.data;
+
+  } catch (error) {
+    console.log('Get trade book error:', error.message);
+    throw error;
+  }
+};
+
+module.exports = { connectAngelOne, getPositions, placeOrder, getTradeBook };
