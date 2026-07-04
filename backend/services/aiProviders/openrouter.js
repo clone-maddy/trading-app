@@ -7,7 +7,7 @@ async function callOpenRouter(messages) {
 
   const url = 'https://openrouter.ai/api/v1/chat/completions';
   const body = {
-    model: 'google/gemini-2.5-flash',
+    model: 'openrouter/free',
     messages: messages.map(m => ({
       role: m.role,
       content: m.content

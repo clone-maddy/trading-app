@@ -7,7 +7,7 @@ async function callGroq(messages) {
 
   const url = 'https://api.groq.com/openai/v1/chat/completions';
   const body = {
-    model: 'llama3-8b-8192',
+    model: 'llama-3.1-8b-instant',
     messages: messages.map(m => ({
       role: m.role,
       content: m.content
