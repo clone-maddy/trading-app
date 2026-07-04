@@ -1,0 +1,122 @@
+TRADING ASSISTANT: PROJECT OVERVIEW & ARCHITECTURE
+
+This document provides a comprehensive overview of the Trading Assistant project. It is designed to be shared with other AI models (e.g., Claude) or developers to discuss future features, tools, and code improvements.
+
+========================================================================
+1. ARCHITECTURE & TECH STACK
+========================================================================
+
+The application is structured as a monorepo with separate frontend and backend services.
+
+Tech Stack:
+* Frontend:
+  - React.js (SPA, Create React App)
+  - State Management: Local React Hooks (useState, useEffect, useRef)
+  - Real-Time Communication: socket.io-client (websockets)
+  - Charts: recharts (custom implementation of Area/Line charts with SMA/RSI overlays)
+  - Styling: CSS variables with a dark-mode theme
+* Backend:
+  - Node.js & Express.js
+  - Database: MongoDB (Mongoose ODM)
+  - Real-Time Server: Socket.IO
+  - Broker Integration: smartapi-javascript (official SDK for AngelOne SmartAPI)
+  - Security & Auth: JSON Web Tokens (JWT), Speakeasy (TOTP validation)
+
+========================================================================
+2. CORE BACKEND SERVICES (/backend/services)
+========================================================================
+
+The backend coordinates live connections with the AngelOne broker and handles real-time positions tracking and risk management.
+
+A. Broker Connection Module (backend/services/angelone.js)
+* Purpose: Handles connection to AngelOne rest API endpoints.
+* Key Operations:
+  - connectAngelOne(): Authenticates via client credentials, password/MPIN, and generates a dynamic TOTP using the Speakeasy library. Caches JWT and Feed tokens.
+  - getPositions(): Fetches live open/closed positions from the AngelOne account.
+  - placeOrder(): Places market orders for real execution.
+  - getTradeBook(): Fetches daily trade execution history.
+
+B. WebSocket Feed Module (backend/services/websocketFeed.js)
+* Purpose: Interfaces with AngelOne WebSocket Feed to stream live tick data.
+* Key Operations:
+  - Connects using smartapi-javascript's WebSocketV2 client.
+  - Aggregates token subscription requests across all UI clients (reference counting to avoid redundant broker queries).
+  - Caches live LTP (Last Traded Price), Volume, Open Interest (OI), and Bid-Ask spreads.
+  - Streams live updates to all connected frontend clients via a Socket.IO room.
+
+C. Option Chain Module (backend/services/optionChain.js)
+* Purpose: Manages index and option contracts data.
+* Key Operations:
+  - Loads local scrip master metadata (scripmaster.json) to find NIFTY, BANKNIFTY, and FINNIFTY options contracts.
+  - Queries expiries, extracts option chain layouts (Calls vs Puts per strike).
+  - Fetches index spot prices and options candle data (1m, 5m, 15m, 1h, 1d timeframes) from AngelOne's historical APIs.
+
+D. Real-Time Risk Monitor (backend/services/pnlMonitor.js)
+* Purpose: Implements programmatic risk-management rules on open positions.
+* Key Operations:
+  - Runs a 1-second interval loop evaluating either Real or Virtual positions.
+  - Global Settings: Auto-exits all positions when a combined target profit or stop-loss limit is reached.
+  - Trailing Stop Loss: Automatically trails up the stop loss based on the peak P&L reached.
+  - Partial Exits: Triggers partial position squared-offs (e.g., exit 50% quantity) at specified profit points.
+  - Position-Specific Settings: Individual target profit, stop loss, and trailing parameters can be set per contract.
+  - Retry Logic: Implements robust retry loops when placing square-off market orders to avoid execution failure.
+
+========================================================================
+3. DATABASE SCHEMA (/backend/models)
+========================================================================
+
+The database stores user profiles, authentication state, and logs for Virtual (Demo) Account performance:
+
+1. User Schema (backend/models/User.js): Holds user email and password hashes.
+2. VirtualPortfolio Schema (backend/models/VirtualPortfolio.js): Holds demo account balances, win/loss stats, total P&L, and initial capital.
+3. VirtualTrade Schema (backend/models/VirtualTrade.js): Logs individual paper trades, execution entries/exits, P&L, status (OPEN/CLOSED), and reasons for exit (e.g., TARGET_HIT, STOPLOSS_HIT, MANUAL).
+
+========================================================================
+4. FRONTEND VIEW & ROUTING SYSTEM (/frontend/src)
+========================================================================
+
+The client side is styled to provide a premium, real-time command dashboard split into two environments:
+
+Real Account Area:
+* Real Dashboard (frontend/src/pages/RealDashboard.jsx): Lists live positions from AngelOne, tracks total P&L, displays global risk monitors (Target, SL, Trailing SL), and allows customizing individual stop-losses per contract.
+* Real Option Chain (frontend/src/pages/RealTrading.jsx): Provides a grid view of index strikes with Call/Put details, live bid/ask spreads, and click-to-trade order forms.
+* Real Analytics (frontend/src/pages/Analytics.jsx): Displays reports and charts of executed real trades.
+
+Demo / Paper Trading Area:
+* Virtual Dashboard (frontend/src/pages/VirtualDashboard.jsx): Simulates the real dashboard experience. Includes current virtual balance, win rate, total trades log, and options to reset the portfolio.
+* Virtual Option Chain (frontend/src/pages/VirtualTrading.jsx): Allows simulated option buying or selling at current live market prices.
+* Virtual Analytics: Performance metrics for simulated strategies.
+
+Live Chart Component (frontend/src/components/StockChart.jsx):
+* Provides modal popups displaying selected contract candles.
+* Enables timeframe changes (1m, 5m, 15m, 1h, 1d).
+* Computes and overlays technical indicators on the client side:
+  - Simple Moving Averages (SMA 9 and SMA 21).
+  - Relative Strength Index (RSI 14) in a sub-chart.
+* Supports setting custom price alerts (e.g., trigger sound and browser push notification when price >= or <= a target value).
+
+========================================================================
+5. FUTURE FEATURES & DISCUSSION POINTS FOR CLAUDE
+========================================================================
+
+Here are concrete areas and tools to discuss for your next phase of development:
+
+Technical Indicators & Alerts (Immediate Priority):
+* EMA Crossovers: Implement the logic described in TODO.txt: "moving average 9 ema cuts 21 ema from above - give an alert".
+* Server-Side Alerts Engine: Currently, technical indicators and alert logic are computed on the frontend client. If the user closes the browser, alerts won't fire.
+  - Discussion Point: Moving candle calculations, SMA/EMA computations, and alert rule evaluations to a background server-side cron or websocket worker.
+
+Semi-Automated / Algorithmic Trading Rules:
+* Auto-Entry Strategies: Combine indicators (e.g., EMA crossovers, RSI breakouts) directly into order executors. For example: "If Nifty crosses below the 9 EMA, auto-buy the nearest OTM Put option".
+* Multi-Leg Strategy Builder: Build support for multi-leg strategies (Straddles, Strangles, Iron Condors) with group-level target profit/stop-loss.
+
+Notification Integrations:
+* Webhooks: Push alerts to Telegram, Discord, or WhatsApp when a risk threshold is hit or positions are closed out.
+
+Advanced Performance Analytics:
+* Metrics: Calculate Sharpe Ratio, Drawdown, Profit Factor, and average hold times.
+* Equity Curve: Visualize portfolio balance growth over time on a chart.
+
+Developer Tooling & Testing:
+* Historical Data Ingestion: Store historical option chain data in a MongoDB time-series collection to backtest strategies offline.
+* Mock AngelOne Server: Create a local mock broker API server to simulate order failures, delay, and extreme slippage to test the resilience of your pnlMonitor exit logic.

@@ -1,0 +1,3 @@
+moving average 9 ema cuts 21 ema from above - give an alert
+make an account page where user information is diplayed and can be modified and add an option there to toogle between virtual and real mode
+add the sum of OI's of both sides 7 each 3up and 3down with the ATM for each expiry
