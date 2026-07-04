@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import Alerts from './pages/Alerts';
 import Account from './pages/Account';
 import Home from './pages/Home';
+import ChatBot from './components/ChatBot';
 import './App.css';
 
 // Protected Route wrapper
@@ -211,6 +212,7 @@ function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ChatBot />
     </Router>
   );
 }

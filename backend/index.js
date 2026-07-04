@@ -11,6 +11,7 @@ const authRoute = require('./routes/auth');
 const virtualTradeRoute = require('./routes/virtualTrade');
 const optionChainRoute = require('./routes/optionChain');
 const alertsRoute = require('./routes/alerts');
+const chatRoute = require('./routes/chat');
 const { initWebSocket, subscribeTokens, unsubscribeTokens, onTick, onCrossover, getStatus } = require('./services/websocketFeed');
 const { sendAlert, onAlert } = require('./services/notificationDispatcher');
 const AlertConfig = require('./models/AlertConfig');
@@ -44,6 +45,7 @@ app.use('/api/auth', authRoute);
 app.use('/api/virtual', virtualTradeRoute);
 app.use('/api/options', optionChainRoute);
 app.use('/api/alerts', alertsRoute);
+app.use('/api/chat', chatRoute);
 
 app.get('/', (req, res) => {
   res.send('Trading App Backend is running!');
