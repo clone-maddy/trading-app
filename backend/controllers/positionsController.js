@@ -2,7 +2,7 @@ const { getPositions, placeOrder, getTradeBook } = require('../services/angelone
 
 const getPositionsController = async (req, res) => {
   try {
-    const positions = await getPositions();
+    const positions = await getPositions(req.userId);
 
     if (positions.status && positions.data && positions.data.length > 0) {
       const normalized = positions.data.map(pos => ({
@@ -37,7 +37,7 @@ const getPositionsController = async (req, res) => {
 const placeOrderController = async (req, res) => {
   try {
     const orderParams = req.body;
-    const response = await placeOrder(orderParams);
+    const response = await placeOrder(orderParams, req.userId);
     res.json(response);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -46,7 +46,7 @@ const placeOrderController = async (req, res) => {
 
 const getTradeHistoryController = async (req, res) => {
   try {
-    const tradeBook = await getTradeBook();
+    const tradeBook = await getTradeBook(req.userId);
     if (tradeBook.status && tradeBook.data) {
       const normalized = tradeBook.data.map(trade => ({
         _id: trade.orderid,

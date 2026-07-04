@@ -19,7 +19,7 @@ router.get('/chain/:index/:expiry', authMiddleware, async (req, res) => {
   try {
     const { index, expiry } = req.params;
     const chain = await getOptionChain(index.toUpperCase(), expiry.toUpperCase());
-    const spotPrice = await getIndexSpotPrice(index);
+    const spotPrice = await getIndexSpotPrice(index, req.userId);
     res.json({ success: true, data: chain, spotPrice });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -33,7 +33,7 @@ router.get('/candles', authMiddleware, async (req, res) => {
     if (!token || !exchange || !interval) {
       return res.status(400).json({ success: false, message: 'Missing required query parameters: token, exchange, interval' });
     }
-    const candles = await getCandleData(token, exchange.toUpperCase(), interval.toUpperCase());
+    const candles = await getCandleData(token, exchange.toUpperCase(), interval.toUpperCase(), req.userId);
     res.json({ success: true, data: candles });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

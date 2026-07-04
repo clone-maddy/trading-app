@@ -13,12 +13,12 @@ Tech Stack:
   - React.js (SPA, Create React App)
   - State Management: Local React Hooks (useState, useEffect, useRef)
   - Real-Time Communication: socket.io-client (websockets)
-  - Charts: recharts (custom implementation of Area/Line charts with SMA/RSI overlays)
+  - Charts: recharts (custom implementation of Area/Line charts with SMA/RSI overlays and EMAReferenceDots)
   - Styling: CSS variables with a dark-mode theme
 * Backend:
   - Node.js & Express.js
   - Database: MongoDB (Mongoose ODM)
-  - Real-Time Server: Socket.IO
+  - Real-Time Server: Socket.IO (with secure user-specific rooms mapping JWT userIds to sockets)
   - Broker Integration: smartapi-javascript (official SDK for AngelOne SmartAPI)
   - Security & Auth: JSON Web Tokens (JWT), Speakeasy (TOTP validation)
 
@@ -26,7 +26,7 @@ Tech Stack:
 2. CORE BACKEND SERVICES (/backend/services)
 ========================================================================
 
-The backend coordinates live connections with the AngelOne broker and handles real-time positions tracking and risk management.
+The backend coordinates live connections with the AngelOne broker and handles real-time positions tracking, risk management, and indicator calculations.
 
 A. Broker Connection Module (backend/services/angelone.js)
 * Purpose: Handles connection to AngelOne rest API endpoints.
@@ -37,12 +37,13 @@ A. Broker Connection Module (backend/services/angelone.js)
   - getTradeBook(): Fetches daily trade execution history.
 
 B. WebSocket Feed Module (backend/services/websocketFeed.js)
-* Purpose: Interfaces with AngelOne WebSocket Feed to stream live tick data.
+* Purpose: Interfaces with AngelOne WebSocket Feed to stream live tick data and aggregate candles.
 * Key Operations:
   - Connects using smartapi-javascript's WebSocketV2 client.
-  - Aggregates token subscription requests across all UI clients (reference counting to avoid redundant broker queries).
+  - Aggregates token subscription requests across all UI clients (reference counting to avoid redundant broker queries) and background alert configurations.
   - Caches live LTP (Last Traded Price), Volume, Open Interest (OI), and Bid-Ask spreads.
   - Streams live updates to all connected frontend clients via a Socket.IO room.
+  - Maintains a moving 1-minute candle cache, primes them from database subscriptions, aggregates live ticks, and triggers the alertsEngine crossover check on every tick and on candle close.
 
 C. Option Chain Module (backend/services/optionChain.js)
 * Purpose: Manages index and option contracts data.
@@ -50,6 +51,7 @@ C. Option Chain Module (backend/services/optionChain.js)
   - Loads local scrip master metadata (scripmaster.json) to find NIFTY, BANKNIFTY, and FINNIFTY options contracts.
   - Queries expiries, extracts option chain layouts (Calls vs Puts per strike).
   - Fetches index spot prices and options candle data (1m, 5m, 15m, 1h, 1d timeframes) from AngelOne's historical APIs.
+  - getSymbolByToken(token): Returns the formatted option contract symbol name for any token lookup.
 
 D. Real-Time Risk Monitor (backend/services/pnlMonitor.js)
 * Purpose: Implements programmatic risk-management rules on open positions.
@@ -61,39 +63,66 @@ D. Real-Time Risk Monitor (backend/services/pnlMonitor.js)
   - Position-Specific Settings: Individual target profit, stop loss, and trailing parameters can be set per contract.
   - Retry Logic: Implements robust retry loops when placing square-off market orders to avoid execution failure.
 
+E. Crossover Alerts Engine (backend/services/alertsEngine.js)
+* Purpose: Evaluates server-side crossovers for configured stocks.
+* Key Operations:
+  - Evaluates EMA 9 and EMA 21 values on the candle series.
+  - Detects crossovers: Bullish (EMA9 crosses above EMA21) and Bearish (EMA9 crosses below EMA21).
+  - Includes a 60-second lockout timer to prevent notification spam from intra-candle price fluctuations (whipsaw protection).
+
+F. Notification Dispatcher (backend/services/notificationDispatcher.js)
+* Purpose: Delivers alerts to users across platforms.
+* Key Operations:
+  - Logs alert history records in MongoDB.
+  - Pushes real-time Socket.IO alerts to active users.
+  - Dispatches rich notification trading cards to the user's phone/desktop via Telegram Bot API when a telegramChatId is linked.
+
+G. Indicator Utilities (backend/utils/indicators.js)
+* Purpose: Mathematical definitions of technical indicators (calculateEMA).
+
 ========================================================================
 3. DATABASE SCHEMA (/backend/models)
 ========================================================================
 
-The database stores user profiles, authentication state, and logs for Virtual (Demo) Account performance:
+The database stores user profiles, authentication state, and logs for Virtual (Demo) Account performance and alerts:
 
-1. User Schema (backend/models/User.js): Holds user email and password hashes.
+1. User Schema (backend/models/User.js): Holds user email, password hashes, telegramChatId, and default tradingMode ('real' or 'virtual').
 2. VirtualPortfolio Schema (backend/models/VirtualPortfolio.js): Holds demo account balances, win/loss stats, total P&L, and initial capital.
 3. VirtualTrade Schema (backend/models/VirtualTrade.js): Logs individual paper trades, execution entries/exits, P&L, status (OPEN/CLOSED), and reasons for exit (e.g., TARGET_HIT, STOPLOSS_HIT, MANUAL).
+4. Alert Schema (backend/models/Alert.js): Logs triggered alert history records (contract symbol, token, direction, EMA values, timestamp, seen flag).
+5. AlertConfig Schema (backend/models/AlertConfig.js): Stores active alert monitoring subscriptions per user to run background websocket feed calculations.
 
 ========================================================================
 4. FRONTEND VIEW & ROUTING SYSTEM (/frontend/src)
 ========================================================================
 
-The client side is styled to provide a premium, real-time command dashboard split into two environments:
+The client side is styled to provide a premium, real-time command dashboard split into three main environments:
 
 Real Account Area:
 * Real Dashboard (frontend/src/pages/RealDashboard.jsx): Lists live positions from AngelOne, tracks total P&L, displays global risk monitors (Target, SL, Trailing SL), and allows customizing individual stop-losses per contract.
-* Real Option Chain (frontend/src/pages/RealTrading.jsx): Provides a grid view of index strikes with Call/Put details, live bid/ask spreads, and click-to-trade order forms.
+* Real Option Chain (frontend/src/pages/RealTrading.jsx): Provides a grid view of index strikes with Call/Put details, live bid/ask spreads, chart triggers, click-to-trade forms, and 🔔 alert monitoring buttons.
 * Real Analytics (frontend/src/pages/Analytics.jsx): Displays reports and charts of executed real trades.
 
 Demo / Paper Trading Area:
 * Virtual Dashboard (frontend/src/pages/VirtualDashboard.jsx): Simulates the real dashboard experience. Includes current virtual balance, win rate, total trades log, and options to reset the portfolio.
-* Virtual Option Chain (frontend/src/pages/VirtualTrading.jsx): Allows simulated option buying or selling at current live market prices.
+* Virtual Option Chain (frontend/src/pages/VirtualTrading.jsx): Allows simulated option buying or selling at current live market prices, with chart triggers and 🔔 alert monitoring buttons.
 * Virtual Analytics: Performance metrics for simulated strategies.
+
+Alerts & Settings Center:
+* Alerts Dashboard (frontend/src/pages/Alerts.jsx): Displays triggered alerts log (mark-seen, delete actions), list of active stock configurations, and Telegram integration setup.
+* Account Dashboard (frontend/src/pages/Account.jsx): Manage personal profile, MPIN, TOTP secrets, API Keys, Telegram Chat IDs, and preferred default workspace.
+* Navbar unseen bell: A bell icon with a real-time badge counting unseen notifications, playing a chime on alert delivery.
+* Navbar settings link: A settings gear button (⚙️) to open the Account page.
 
 Live Chart Component (frontend/src/components/StockChart.jsx):
 * Provides modal popups displaying selected contract candles.
 * Enables timeframe changes (1m, 5m, 15m, 1h, 1d).
 * Computes and overlays technical indicators on the client side:
   - Simple Moving Averages (SMA 9 and SMA 21).
+  - Exponential Moving Averages (EMA 9 and EMA 21) line overlays.
   - Relative Strength Index (RSI 14) in a sub-chart.
-* Supports setting custom price alerts (e.g., trigger sound and browser push notification when price >= or <= a target value).
+* Supports setting custom price alerts.
+* Overlays crossover ReferenceDots (▲ / ▼) directly on the chart lines at the exact timestamps where historical alerts triggered.
 
 ========================================================================
 5. FUTURE FEATURES & DISCUSSION POINTS FOR CLAUDE
@@ -101,17 +130,12 @@ Live Chart Component (frontend/src/components/StockChart.jsx):
 
 Here are concrete areas and tools to discuss for your next phase of development:
 
-Technical Indicators & Alerts (Immediate Priority):
-* EMA Crossovers: Implement the logic described in TODO.txt: "moving average 9 ema cuts 21 ema from above - give an alert".
-* Server-Side Alerts Engine: Currently, technical indicators and alert logic are computed on the frontend client. If the user closes the browser, alerts won't fire.
-  - Discussion Point: Moving candle calculations, SMA/EMA computations, and alert rule evaluations to a background server-side cron or websocket worker.
-
 Semi-Automated / Algorithmic Trading Rules:
 * Auto-Entry Strategies: Combine indicators (e.g., EMA crossovers, RSI breakouts) directly into order executors. For example: "If Nifty crosses below the 9 EMA, auto-buy the nearest OTM Put option".
 * Multi-Leg Strategy Builder: Build support for multi-leg strategies (Straddles, Strangles, Iron Condors) with group-level target profit/stop-loss.
 
 Notification Integrations:
-* Webhooks: Push alerts to Telegram, Discord, or WhatsApp when a risk threshold is hit or positions are closed out.
+* Webhooks: Push alerts to Discord or WhatsApp when a risk threshold is hit or positions are closed out.
 
 Advanced Performance Analytics:
 * Metrics: Calculate Sharpe Ratio, Drawdown, Profit Factor, and average hold times.

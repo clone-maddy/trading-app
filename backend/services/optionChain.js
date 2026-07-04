@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { connectAngelOne } = require('./angelone');
+const User = require('../models/User');
 
 let scripMaster = null;
 
@@ -128,9 +129,12 @@ const getOptionChain = async (indexName, expiry) => {
 };
 
 // Get live price for a specific token
-const getLivePrice = async (token) => {
+const getLivePrice = async (token, userId) => {
   try {
-    const { authToken } = await connectAngelOne();
+    const { authToken } = await connectAngelOne(userId);
+    const user = await User.findById(userId);
+    if (!user) return 0;
+
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
       { mode: 'LTP', exchangeTokens: { 'NFO': [token] } },
@@ -144,7 +148,7 @@ const getLivePrice = async (token) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -154,13 +158,13 @@ const getLivePrice = async (token) => {
     }
     return 0;
   } catch (error) {
-    console.log('Error fetching live price:', error.message);
+    console.log(`Error fetching live price for token ${token} (User ${userId}):`, error.message);
     return 0;
   }
 };
 
 // Get live spot price of index
-const getIndexSpotPrice = async (indexName) => {
+const getIndexSpotPrice = async (indexName, userId) => {
   const tokenMap = {
     'NIFTY': '99926000',
     'BANKNIFTY': '99926009',
@@ -170,7 +174,10 @@ const getIndexSpotPrice = async (indexName) => {
   if (!token) return 0;
 
   try {
-    const { authToken } = await connectAngelOne();
+    const { authToken } = await connectAngelOne(userId);
+    const user = await User.findById(userId);
+    if (!user) return 0;
+
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
       { mode: 'LTP', exchangeTokens: { 'NSE': [token] } },
@@ -184,7 +191,7 @@ const getIndexSpotPrice = async (indexName) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -194,7 +201,7 @@ const getIndexSpotPrice = async (indexName) => {
     }
     return 0;
   } catch (error) {
-    console.log(`Error fetching spot price for ${indexName}:`, error.message);
+    console.log(`Error fetching spot price for ${indexName} (User ${userId}):`, error.message);
     return 0;
   }
 };
@@ -208,9 +215,13 @@ const formatDateForAngel = (date) => {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 };
 
-const getCandleData = async (symboltoken, exchange, interval) => {
+const getCandleData = async (symboltoken, exchange, interval, userId) => {
   try {
-    const { authToken } = await connectAngelOne();
+    const { authToken } = await connectAngelOne(userId);
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
     
     const now = new Date();
     const toDateStr = formatDateForAngel(now);
@@ -227,7 +238,7 @@ const getCandleData = async (symboltoken, exchange, interval) => {
     }
     const fromDateStr = formatDateForAngel(fromDate);
     
-    console.log(`[Historical API] Fetching ${interval} for token ${symboltoken} (${exchange}) from ${fromDateStr} to ${toDateStr}`);
+    console.log(`[Historical API] Fetching ${interval} for token ${symboltoken} (${exchange}) from ${fromDateStr} to ${toDateStr} for user ${userId}`);
 
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData',
@@ -248,7 +259,7 @@ const getCandleData = async (symboltoken, exchange, interval) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -258,9 +269,19 @@ const getCandleData = async (symboltoken, exchange, interval) => {
     }
     throw new Error(response.data.message || 'Failed to fetch candle data');
   } catch (error) {
-    console.log('Error fetching candle data:', error.message);
+    console.log(`Error fetching candle data for user ${userId}:`, error.message);
     throw error;
   }
 };
 
-module.exports = { getExpiryDates, getOptionChain, getLivePrice, getIndexSpotPrice, getCandleData };
+const getSymbolByToken = (token) => {
+  try {
+    const data = loadScripMaster();
+    const match = data.find(s => s.token === token);
+    return match ? match.symbol : token;
+  } catch (err) {
+    return token;
+  }
+};
+
+module.exports = { getExpiryDates, getOptionChain, getLivePrice, getIndexSpotPrice, getCandleData, getSymbolByToken };

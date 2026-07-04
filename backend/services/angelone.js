@@ -1,27 +1,44 @@
 const axios = require('axios');
 const speakeasy = require('speakeasy');
+const User = require('../models/User');
 
-let authToken = null;
-let feedToken = null;
-let lastConnected = null;
+// In-memory cache for user-specific AngelOne feed & API sessions
+const activeSessions = {};
 
-const connectAngelOne = async () => {
+const connectAngelOne = async (userId) => {
   try {
-    // Reuse existing connection if less than 30 mins old
-    if (authToken && lastConnected && (Date.now() - lastConnected) < 30 * 60 * 1000) {
-      return { authToken, feedToken };
+    if (!userId) {
+      throw new Error('UserId is required to connect to AngelOne');
     }
 
+    // Retrieve user credentials from database
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User account not found!');
+    }
+    if (!user.angelClientId || !user.angelMpin || !user.angelTotpSecret || !user.angelApiKey) {
+      throw new Error('AngelOne broker credentials are not configured. Please enter them in your Account settings page.');
+    }
+
+    const session = activeSessions[userId] || {};
+
+    // Reuse existing connection if less than 30 mins old
+    if (session.authToken && session.lastConnected && (Date.now() - session.lastConnected) < 30 * 60 * 1000) {
+      return { authToken: session.authToken, feedToken: session.feedToken };
+    }
+
+    // Strip whitespaces if any in TOTP Secret
+    const totpSecret = user.angelTotpSecret.replace(/\s+/g, '');
     const totp = speakeasy.totp({
-      secret: process.env.ANGEL_TOTP_SECRET,
+      secret: totpSecret,
       encoding: 'base32'
     });
 
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword',
       {
-        clientcode: process.env.ANGEL_CLIENT_ID,
-        password: process.env.ANGEL_MPIN,
+        clientcode: user.angelClientId,
+        password: user.angelMpin,
         totp: totp
       },
       {
@@ -33,7 +50,7 @@ const connectAngelOne = async () => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -42,22 +59,27 @@ const connectAngelOne = async () => {
       throw new Error(response.data.message || 'Angel One login failed');
     }
 
-    authToken = response.data.data.jwtToken;
-    feedToken = response.data.data.feedToken;
-    lastConnected = Date.now();
+    const newSession = {
+      authToken: response.data.data.jwtToken,
+      feedToken: response.data.data.feedToken,
+      lastConnected: Date.now()
+    };
 
-    console.log('Angel One connected successfully!');
-    return { authToken, feedToken };
+    activeSessions[userId] = newSession;
+
+    console.log(`Angel One connected successfully for user ${userId} (${user.email})!`);
+    return { authToken: newSession.authToken, feedToken: newSession.feedToken };
 
   } catch (error) {
-    console.log('Angel One connection error:', error.message);
+    console.log(`Angel One connection error for user ${userId}:`, error.message);
     throw error;
   }
 };
 
-const getPositions = async () => {
+const getPositions = async (userId) => {
   try {
-    const tokens = await connectAngelOne();
+    const tokens = await connectAngelOne(userId);
+    const user = await User.findById(userId);
 
     const response = await axios.get(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getPosition',
@@ -71,7 +93,7 @@ const getPositions = async () => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -81,26 +103,25 @@ const getPositions = async () => {
   } catch (error) {
     // Clear cached token on auth errors so next call re-authenticates
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      console.log('Auth token expired/invalid, clearing cache for re-login');
-      authToken = null;
-      feedToken = null;
-      lastConnected = null;
+      console.log(`Auth token expired/invalid for user ${userId}, clearing session cache for re-login`);
+      delete activeSessions[userId];
     }
-    console.log('Get positions error:', error.message);
+    console.log(`Get positions error for user ${userId}:`, error.message);
     throw error;
   }
 };
 
-const placeOrder = async (orderParams) => {
+const placeOrder = async (orderParams, userId) => {
   try {
-    const { authToken } = await connectAngelOne();
+    const tokens = await connectAngelOne(userId);
+    const user = await User.findById(userId);
 
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/placeOrder',
       orderParams,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${tokens.authToken}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-UserType': 'USER',
@@ -108,7 +129,7 @@ const placeOrder = async (orderParams) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -116,20 +137,21 @@ const placeOrder = async (orderParams) => {
     return response.data;
 
   } catch (error) {
-    console.log('Place order error:', error.message);
+    console.log(`Place order error for user ${userId}:`, error.message);
     throw error;
   }
 };
 
-const getTradeBook = async () => {
+const getTradeBook = async (userId) => {
   try {
-    const { authToken } = await connectAngelOne();
+    const tokens = await connectAngelOne(userId);
+    const user = await User.findById(userId);
 
     const response = await axios.get(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/getTradeBook',
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Authorization': `Bearer ${tokens.authToken}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'X-UserType': 'USER',
@@ -137,7 +159,7 @@ const getTradeBook = async () => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': process.env.ANGEL_API_KEY
+          'X-PrivateKey': user.angelApiKey
         }
       }
     );
@@ -145,7 +167,7 @@ const getTradeBook = async () => {
     return response.data;
 
   } catch (error) {
-    console.log('Get trade book error:', error.message);
+    console.log(`Get trade book error for user ${userId}:`, error.message);
     throw error;
   }
 };

@@ -11,7 +11,8 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer,
+  ReferenceDot
 } from 'recharts';
 
 const API = 'http://localhost:5000/api';
@@ -25,7 +26,10 @@ function StockChart({ token, symbol, exchange, onClose }) {
   // Indicators
   const [showSMA9, setShowSMA9] = useState(false);
   const [showSMA21, setShowSMA21] = useState(false);
+  const [showEMA9, setShowEMA9] = useState(true);
+  const [showEMA21, setShowEMA21] = useState(true);
   const [showRSI, setShowRSI] = useState(false);
+  const [triggeredAlerts, setTriggeredAlerts] = useState([]);
 
   // Alerts
   const [alerts, setAlerts] = useState([]);
@@ -75,8 +79,22 @@ function StockChart({ token, symbol, exchange, onClose }) {
     setLoading(false);
   };
 
+  const fetchTokenAlerts = async () => {
+    try {
+      const userToken = localStorage.getItem('token');
+      const res = await axios.get(`${API}/alerts`, { headers: { Authorization: `Bearer ${userToken}` } });
+      if (res.data.success) {
+        const filtered = res.data.data.filter(a => a.token === token && a.type === 'ema_crossover');
+        setTriggeredAlerts(filtered);
+      }
+    } catch (err) {
+      console.log('Failed to fetch token alerts:', err);
+    }
+  };
+
   useEffect(() => {
     fetchCandleData();
+    fetchTokenAlerts();
   }, [token, interval]);
 
   // Connect Socket for Live LTP Updates on Chart
@@ -201,6 +219,42 @@ function StockChart({ token, symbol, exchange, onClose }) {
         for (let i = 0; i < 21; i++) sum += data[idx - i].close;
         return { ...d, sma21: Number((sum / 21).toFixed(2)) };
       });
+    }
+
+    // EMA 9 Calculation
+    if (data.length >= 9) {
+      const ema9Values = new Array(data.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < 9; i++) sum += data[i].close;
+      ema9Values[8] = sum / 9;
+      const multiplier = 2 / 10;
+      for (let i = 9; i < data.length; i++) {
+        ema9Values[i] = (data[i].close - ema9Values[i - 1]) * multiplier + ema9Values[i - 1];
+      }
+      data = data.map((d, idx) => ({
+        ...d,
+        ema9: ema9Values[idx] !== null ? Number(ema9Values[idx].toFixed(2)) : null
+      }));
+    } else {
+      data = data.map(d => ({ ...d, ema9: null }));
+    }
+
+    // EMA 21 Calculation
+    if (data.length >= 21) {
+      const ema21Values = new Array(data.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < 21; i++) sum += data[i].close;
+      ema21Values[20] = sum / 21;
+      const multiplier = 2 / 22;
+      for (let i = 21; i < data.length; i++) {
+        ema21Values[i] = (data[i].close - ema21Values[i - 1]) * multiplier + ema21Values[i - 1];
+      }
+      data = data.map((d, idx) => ({
+        ...d,
+        ema21: ema21Values[idx] !== null ? Number(ema21Values[idx].toFixed(2)) : null
+      }));
+    } else {
+      data = data.map(d => ({ ...d, ema21: null }));
     }
 
     // RSI 14 Calculation
@@ -329,6 +383,36 @@ function StockChart({ token, symbol, exchange, onClose }) {
               SMA 21
             </button>
             <button
+              onClick={() => setShowEMA9(!showEMA9)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: showEMA9 ? '#dcfce7' : '#ffffff',
+                color: showEMA9 ? '#15803d' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              EMA 9
+            </button>
+            <button
+              onClick={() => setShowEMA21(!showEMA21)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: showEMA21 ? '#fee2e2' : '#ffffff',
+                color: showEMA21 ? '#b91c1c' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              EMA 21
+            </button>
+            <button
               onClick={() => setShowRSI(!showRSI)}
               style={{
                 padding: '6px 12px',
@@ -419,6 +503,58 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           name="SMA (21)"
                         />
                       )}
+                      {showEMA9 && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="ema9" 
+                          stroke="#22c55e" 
+                          strokeWidth={2} 
+                          dot={false}
+                          name="EMA (9)"
+                        />
+                      )}
+                      {showEMA21 && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="ema21" 
+                          stroke="#ef4444" 
+                          strokeWidth={2} 
+                          dot={false}
+                          name="EMA (21)"
+                        />
+                      )}
+                      
+                      {/* Render crossover markers */}
+                      {processedData.map((d, idx) => {
+                        const alert = triggeredAlerts.find(a => {
+                          const alertTime = new Date(a.triggeredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          const alertDate = new Date(a.triggeredAt).toLocaleDateString();
+                          return alertTime === d.time && alertDate === d.date;
+                        });
+
+                        if (alert && d.ema9 !== null) {
+                          const isBullish = alert.direction === 'bullish';
+                          return (
+                            <ReferenceDot
+                              key={`refdot-${idx}`}
+                              x={d.time}
+                              y={d.ema9}
+                              r={6}
+                              fill={isBullish ? '#22c55e' : '#ef4444'}
+                              stroke="#ffffff"
+                              strokeWidth={2}
+                              label={{
+                                value: isBullish ? '▲' : '▼',
+                                position: 'top',
+                                fill: isBullish ? '#22c55e' : '#ef4444',
+                                fontSize: 14,
+                                fontWeight: 'bold'
+                              }}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

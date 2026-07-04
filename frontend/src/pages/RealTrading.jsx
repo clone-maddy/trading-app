@@ -13,6 +13,21 @@ const INDEX_TOKENS = {
   'FINNIFTY': '99926037'
 };
 
+const checkMarketOpen = () => {
+  const istTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = istTime.getDay();
+  if (day === 0 || day === 6) return false;
+  
+  const hour = istTime.getHours();
+  const minute = istTime.getMinutes();
+  const currentTime = hour * 60 + minute;
+  
+  const marketOpen = 9 * 60 + 15;  // 09:15 AM
+  const marketClose = 15 * 60 + 30; // 03:30 PM
+  
+  return currentTime >= marketOpen && currentTime <= marketClose;
+};
+
 function RealTrading() {
   const [selectedIndex, setSelectedIndex] = useState('NIFTY');
   const [expiries, setExpiries] = useState([]);
@@ -215,6 +230,19 @@ function RealTrading() {
     setLoadingChain(false);
   };
 
+  const addAlertMonitor = async (tokenVal) => {
+    try {
+      const res = await axios.post(`${API}/alerts/config`, { token: tokenVal }, { headers });
+      if (res.data.success) {
+        toast.success(res.data.message);
+      } else {
+        toast.error(res.data.message);
+      }
+    } catch (err) {
+      toast.error('Failed to set up alert monitor!');
+    }
+  };
+
   const openTradeModal = (option, type, side) => {
     setTradeModal({ ...option, optionType: type, side });
     setQuantity(1);
@@ -253,7 +281,7 @@ function RealTrading() {
     return strike === closest.strike;
   };
 
-  // Compute OI Summary for 3 Above ATM and 3 Below ATM
+  // Compute OI Summary for 7 Strikes (3 Above ATM, 1 ATM, 3 Below ATM)
   const getOiSummary = () => {
     if (optionChain.length === 0 || !spotPrice) return null;
     
@@ -263,27 +291,20 @@ function RealTrading() {
       return currDiff < closestDiff ? index : closestIdx;
     }, 0);
 
-    let ceAbove = 0;
-    let peAbove = 0;
-    for (let i = 1; i <= 3; i++) {
+    let totalCeOi = 0;
+    let totalPeOi = 0;
+
+    for (let i = -3; i <= 3; i++) {
       const row = optionChain[atmIndex + i];
       if (row) {
-        ceAbove += Number(row.ce?.oi || 0);
-        peAbove += Number(row.pe?.oi || 0);
+        totalCeOi += Number(row.ce?.oi || 0);
+        totalPeOi += Number(row.pe?.oi || 0);
       }
     }
 
-    let ceBelow = 0;
-    let peBelow = 0;
-    for (let i = 1; i <= 3; i++) {
-      const row = optionChain[atmIndex - i];
-      if (row) {
-        ceBelow += Number(row.ce?.oi || 0);
-        peBelow += Number(row.pe?.oi || 0);
-      }
-    }
+    const pcr = totalCeOi > 0 ? Number((totalPeOi / totalCeOi).toFixed(2)) : 0;
 
-    return { ceAbove, ceBelow, peAbove, peBelow };
+    return { totalCeOi, totalPeOi, pcr };
   };
 
   const oiSummary = getOiSummary();
@@ -303,6 +324,25 @@ function RealTrading() {
           </span>
         </div>
       </div>
+
+      {!checkMarketOpen() && (
+        <div style={{ 
+          background: '#fffbeb', 
+          border: '1px solid #fde68a', 
+          color: '#b45309', 
+          padding: '12px 16px', 
+          borderRadius: '8px', 
+          marginBottom: '20px', 
+          fontSize: '13px', 
+          fontWeight: '600',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>⚠️</span>
+          <span>The Indian stock market is currently closed. Live price streams will resume during standard market hours (Mon - Fri, 9:15 AM - 3:30 PM IST).</span>
+        </div>
+      )}
 
       {/* Option Chain Controls */}
       <div className="option-chain-card" style={{ border: '1px solid #ff5252' }}>
@@ -361,13 +401,18 @@ function RealTrading() {
         {spotPrice > 0 && oiSummary && (
           <div className="oi-summary-container" style={{ display: 'flex', gap: '16px', marginBottom: '20px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', justifyContent: 'space-around' }}>
             <div style={{ textAlign: 'center' }}>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>CE Call Resistance (3 Strikes Above ATM)</span>
-              <strong style={{ fontSize: '16px', color: '#b91c1c' }}>{oiSummary.ceAbove.toLocaleString('en-IN')}</strong>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>CE OI Sum (7 Strikes)</span>
+              <strong style={{ fontSize: '16px', color: '#b91c1c' }}>{oiSummary.totalCeOi.toLocaleString('en-IN')}</strong>
             </div>
             <div style={{ width: '1px', background: '#cbd5e1' }}></div>
             <div style={{ textAlign: 'center' }}>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>PE Put Support (3 Strikes Below ATM)</span>
-              <strong style={{ fontSize: '16px', color: '#047857' }}>{oiSummary.peBelow.toLocaleString('en-IN')}</strong>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>PE OI Sum (7 Strikes)</span>
+              <strong style={{ fontSize: '16px', color: '#047857' }}>{oiSummary.totalPeOi.toLocaleString('en-IN')}</strong>
+            </div>
+            <div style={{ width: '1px', background: '#cbd5e1' }}></div>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '700', display: 'block', textTransform: 'uppercase', marginBottom: '4px' }}>Put-Call Ratio (PCR)</span>
+              <strong style={{ fontSize: '16px', color: '#0ea5e9' }}>{oiSummary.pcr.toFixed(2)}</strong>
             </div>
           </div>
         )}
@@ -405,20 +450,32 @@ function RealTrading() {
                             {row.ce?.ltp ? `₹${Number(row.ce.ltp).toFixed(2)}` : '-'}
                           </span>
                           {row.ce && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveChart({
-                                  token: row.ce.token,
-                                  symbol: row.ce.symbol,
-                                  exchange: 'NFO'
-                                });
-                              }}
-                              style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
-                              title="View Chart"
-                            >
-                              📊
-                            </button>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveChart({
+                                    token: row.ce.token,
+                                    symbol: row.ce.symbol,
+                                    exchange: 'NFO'
+                                  });
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
+                                title="View Chart"
+                              >
+                                📊
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addAlertMonitor(row.ce.token);
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
+                                title="Add EMA Alert"
+                              >
+                                🔔
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -436,20 +493,32 @@ function RealTrading() {
                             {row.pe?.ltp ? `₹${Number(row.pe.ltp).toFixed(2)}` : '-'}
                           </span>
                           {row.pe && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveChart({
-                                  token: row.pe.token,
-                                  symbol: row.pe.symbol,
-                                  exchange: 'NFO'
-                                });
-                              }}
-                              style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
-                              title="View Chart"
-                            >
-                              📊
-                            </button>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveChart({
+                                    token: row.pe.token,
+                                    symbol: row.pe.symbol,
+                                    exchange: 'NFO'
+                                  });
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
+                                title="View Chart"
+                              >
+                                📊
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addAlertMonitor(row.pe.token);
+                                }}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '2px', fontSize: '13px' }}
+                                title="Add EMA Alert"
+                              >
+                                🔔
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>

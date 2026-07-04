@@ -109,4 +109,66 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe };
+// Update user profile
+const updateMe = async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      password,
+      angelApiKey,
+      angelClientId,
+      angelMpin,
+      angelTotpSecret,
+      telegramChatId,
+      tradingMode
+    } = req.body;
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found!' });
+    }
+
+    // Check if email already registered to someone else
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.json({ success: false, message: 'Email already registered!' });
+      }
+      user.email = email;
+    }
+
+    if (name) user.name = name;
+    if (password) user.password = password; // mongoose schema pre-save hook will auto-hash it!
+    
+    // Update credentials
+    if (angelApiKey !== undefined) user.angelApiKey = angelApiKey;
+    if (angelClientId !== undefined) user.angelClientId = angelClientId;
+    if (angelMpin !== undefined) user.angelMpin = angelMpin;
+    if (angelTotpSecret !== undefined) user.angelTotpSecret = angelTotpSecret;
+    if (telegramChatId !== undefined) user.telegramChatId = telegramChatId;
+    if (tradingMode !== undefined) user.tradingMode = tradingMode;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully!',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        tradingMode: user.tradingMode,
+        telegramChatId: user.telegramChatId
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+module.exports = { register, login, getMe, updateMe };

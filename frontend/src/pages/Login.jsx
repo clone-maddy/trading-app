@@ -45,8 +45,8 @@ function Login() {
     <div className="login-page">
       <Toaster position="top-right" />
       <div className="login-card">
-        <h1>📈 Trading Assistant</h1>
-        <p className="login-subtitle">Your father's trading companion</p>
+        <h1>Chanakya</h1>
+        <p className="login-subtitle">Strategic options analysis and trading platform</p>
 
         <div className="login-tabs">
           <button className={isLogin ? 'tab active' : 'tab'} onClick={() => setIsLogin(true)}>

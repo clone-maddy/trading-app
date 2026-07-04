@@ -96,7 +96,7 @@ const startPnLMonitor = async (settings) => {
       let positions = [];
 
       if (mode === 'real') {
-        const response = await getPositions();
+        const response = await getPositions(settings.userId);
         const rawPositions = response.data || [];
 
         // Normalize positions to consistent structure, preserving exchange and producttype
@@ -122,7 +122,7 @@ const startPnLMonitor = async (settings) => {
               if (cached) {
                 currentPrice = cached;
               } else {
-                const live = await getLivePrice(pos.token);
+                const live = await getLivePrice(pos.token, settings.userId);
                 if (live > 0) currentPrice = live;
               }
             }
@@ -332,7 +332,7 @@ const exitPosition = async (pos, mode, type = 'full', percent = 100, retries = 3
         producttype: pos.producttype || 'INTRADAY',
         duration: 'DAY',
         quantity: exitQty
-      });
+      }, state.settings.userId);
       console.log(`✅ Exited ${pos.symbol} - ${exitQty} qty (attempt ${attempt})`);
       return;
     } catch (error) {

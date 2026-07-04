@@ -7,6 +7,21 @@ import StockChart from '../components/StockChart';
 const API = 'http://localhost:5000/api';
 const SOCKET_URL = 'http://localhost:5000';
 
+const checkMarketOpen = () => {
+  const istTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = istTime.getDay();
+  if (day === 0 || day === 6) return false;
+  
+  const hour = istTime.getHours();
+  const minute = istTime.getMinutes();
+  const currentTime = hour * 60 + minute;
+  
+  const marketOpen = 9 * 60 + 15;  // 09:15 AM
+  const marketClose = 15 * 60 + 30; // 03:30 PM
+  
+  return currentTime >= marketOpen && currentTime <= marketClose;
+};
+
 function RealDashboard() {
   const [positions, setPositions] = useState([]);
   const [history, setHistory] = useState([]);
@@ -235,6 +250,25 @@ function RealDashboard() {
   return (
     <div className="app">
       <Toaster position="top-right" />
+
+      {!checkMarketOpen() && (
+        <div style={{ 
+          background: '#fffbeb', 
+          border: '1px solid #fde68a', 
+          color: '#b45309', 
+          padding: '12px 16px', 
+          borderRadius: '8px', 
+          marginBottom: '20px', 
+          fontSize: '13px', 
+          fontWeight: '600',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>⚠️</span>
+          <span>The Indian stock market is currently closed. Live price streams will resume during standard market hours (Mon - Fri, 9:15 AM - 3:30 PM IST).</span>
+        </div>
+      )}
 
       {/* Header */}
       <div className="header">

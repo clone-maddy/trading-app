@@ -4,12 +4,16 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 const positionsRoute = require('./routes/positions');
 const monitorRoute = require('./routes/monitor');
 const authRoute = require('./routes/auth');
 const virtualTradeRoute = require('./routes/virtualTrade');
 const optionChainRoute = require('./routes/optionChain');
-const { initWebSocket, subscribeTokens, unsubscribeTokens, onTick, getStatus } = require('./services/websocketFeed');
+const alertsRoute = require('./routes/alerts');
+const { initWebSocket, subscribeTokens, unsubscribeTokens, onTick, onCrossover, getStatus } = require('./services/websocketFeed');
+const { sendAlert, onAlert } = require('./services/notificationDispatcher');
+const AlertConfig = require('./models/AlertConfig');
 
 dotenv.config();
 
@@ -39,6 +43,7 @@ app.use('/api/monitor', monitorRoute);
 app.use('/api/auth', authRoute);
 app.use('/api/virtual', virtualTradeRoute);
 app.use('/api/options', optionChainRoute);
+app.use('/api/alerts', alertsRoute);
 
 app.get('/', (req, res) => {
   res.send('Trading App Backend is running!');
@@ -50,6 +55,8 @@ app.get('/api/ws-status', (req, res) => {
 });
 
 // ===== Socket.IO Setup =====
+// Track socketId -> userId mapping
+const socketToUser = new Map(); // socketId -> userId
 // Track subscriptions per client for cleanup
 const clientSubscriptions = new Map(); // socketId -> Set of tokens
 // Reference count tokens across all clients
@@ -58,6 +65,26 @@ const tokenRefCount = new Map(); // token -> count
 io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
   clientSubscriptions.set(socket.id, new Set());
+
+  // Client identifies themselves with their auth token
+  socket.on('register-user', async (data) => {
+    try {
+      const token = data?.token;
+      if (token) {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        socketToUser.set(socket.id, decoded.userId);
+        socket.join(decoded.userId);
+        console.log(`👤 Socket ${socket.id} registered to user ${decoded.userId}`);
+
+        // Self-healing feed: Auto-initialize websocket if not connected
+        if (!getStatus().connected) {
+          initWebSocket(decoded.userId).catch(e => console.log('Socket auto-init websocket failed:', e.message));
+        }
+      }
+    } catch (err) {
+      console.log('Socket user registration failed:', err.message);
+    }
+  });
 
   // Client wants to subscribe to tokens (when option chain loads)
   socket.on('subscribe-tokens', async (data) => {
@@ -78,7 +105,8 @@ io.on('connection', (socket) => {
     });
 
     if (newTokens.length > 0) {
-      await subscribeTokens(newTokens);
+      const userId = socketToUser.get(socket.id);
+      await subscribeTokens(newTokens, userId);
     }
 
     console.log(`📡 Client ${socket.id} subscribed to ${tokens.length} tokens`);
@@ -125,6 +153,7 @@ io.on('connection', (socket) => {
     });
 
     clientSubscriptions.delete(socket.id);
+    socketToUser.delete(socket.id);
 
     if (tokensToRemove.length > 0) {
       await unsubscribeTokens(tokensToRemove);
@@ -141,6 +170,41 @@ onTick((tickData) => {
 const { onMonitorUpdate } = require('./services/pnlMonitor');
 onMonitorUpdate((updateData) => {
   io.emit('monitor-update', updateData);
+});
+
+// Bind crossover engine events from websocketFeed to notificationDispatcher
+onCrossover(async (token, crossoverPayload) => {
+  try {
+    const userIds = new Set();
+    
+    // 1. Find all online users who currently watch this token on their dashboard
+    for (const [socketId, tokens] of clientSubscriptions.entries()) {
+      if (tokens.has(token)) {
+        const userId = socketToUser.get(socketId);
+        if (userId) {
+          userIds.add(userId);
+        }
+      }
+    }
+
+    // 2. ALSO query all users who have an active background AlertConfig for this token (even if they are offline/no open tab)
+    const activeConfigs = await AlertConfig.find({ token });
+    activeConfigs.forEach(c => {
+      userIds.add(c.userId.toString());
+    });
+
+    // 3. Dispatch the alert to each unique user
+    for (const userId of userIds) {
+      await sendAlert(userId, crossoverPayload);
+    }
+  } catch (err) {
+    console.log('Error dispatching crossover to users:', err.message);
+  }
+});
+
+// Bind notifications alerts back to Socket.IO live rooms
+onAlert((userId, alertDoc) => {
+  io.to(userId.toString()).emit('ema_crossover_alert', alertDoc);
 });
 
 // ===== Start Server =====

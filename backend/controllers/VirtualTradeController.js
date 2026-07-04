@@ -137,7 +137,7 @@ const getOpenPositions = async (req, res) => {
 
         if (pos.token) {
           try {
-            const livePrice = await getLivePrice(pos.token);
+            const livePrice = await getLivePrice(pos.token, req.userId);
             if (livePrice > 0) {
               posObj.currentPrice = livePrice;
               // BUY profits when price goes up, SELL profits when price goes down

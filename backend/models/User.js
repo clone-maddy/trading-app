@@ -31,6 +31,15 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  telegramChatId: {
+    type: String,
+    default: ''
+  },
+  tradingMode: {
+    type: String,
+    enum: ['real', 'virtual'],
+    default: 'virtual'
+  },
   createdAt: {
     type: Date,
     default: Date.now
