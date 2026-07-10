@@ -73,7 +73,30 @@ const sendAlert = async (userId, alertPayload) => {
   }
 };
 
+/**
+ * Send a generic Telegram message to a specific user
+ * @param {string} userId - Target user ID
+ * @param {string} text - Message content (HTML formatted)
+ */
+const sendTelegramMessage = async (userId, text) => {
+  try {
+    const user = await User.findById(userId);
+    if (user && user.telegramChatId && process.env.TELEGRAM_BOT_TOKEN) {
+      const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+      await axios.post(telegramUrl, {
+        chat_id: user.telegramChatId,
+        text,
+        parse_mode: 'HTML'
+      });
+      console.log(`✈️ Dispatched Telegram message to chat ${user.telegramChatId} for User ${userId}`);
+    }
+  } catch (error) {
+    console.error(`❌ Failed to send Telegram message:`, error.message);
+  }
+};
+
 module.exports = {
   sendAlert,
-  onAlert
+  onAlert,
+  sendTelegramMessage
 };

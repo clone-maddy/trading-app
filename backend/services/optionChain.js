@@ -144,7 +144,7 @@ const getOptionChain = async (indexName, expiry, userId) => {
             'X-ClientLocalIP': '192.168.1.5',
             'X-ClientPublicIP': '106.193.147.98',
             'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-            'X-PrivateKey': user.angelApiKey
+            'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
           }
         }
       );
@@ -153,7 +153,7 @@ const getOptionChain = async (indexName, expiry, userId) => {
         response.data.data.fetched.forEach(item => {
           livePrices[item.symbolToken] = {
             ltp: item.ltp || 0,
-            oi: item.openInterest || 0,
+            oi: item.opnInterest || 0,
             volume: item.tradeVolume || 0,
             bid: item.depth?.buy?.[0]?.price || 0,
             ask: item.depth?.sell?.[0]?.price || 0
@@ -224,7 +224,7 @@ const getLivePrice = async (token, userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );
@@ -267,7 +267,7 @@ const getIndexSpotPrice = async (indexName, userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );
@@ -337,7 +337,7 @@ const getCandleData = async (symboltoken, exchange, interval, userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );
@@ -362,4 +362,97 @@ const getSymbolByToken = (token) => {
   }
 };
 
-module.exports = { getExpiryDates, getOptionChain, getLivePrice, getIndexSpotPrice, getCandleData, getSymbolByToken };
+const getMultiExpiryOiSummary = async (indexName, userId) => {
+  const scripData = loadScripMaster();
+  const spotPrice = await getIndexSpotPrice(indexName, userId);
+  if (!spotPrice) {
+    throw new Error('Could not fetch spot price for ' + indexName);
+  }
+
+  // Get all expiry dates sorted chronologically
+  const expiries = getExpiryDates(indexName);
+  // Limit to near-term expiries (e.g. first 5 expiries) to avoid hitting limits
+  const targetExpiries = expiries.slice(0, 5);
+
+  const summary = [];
+  const { authToken } = await connectAngelOne(userId);
+  const user = await User.findById(userId);
+
+  for (const expiry of targetExpiries) {
+    const optionsForExpiry = scripData.filter(
+      s => s.name === indexName && s.expiry === expiry && s.instrumenttype === 'OPTIDX'
+    );
+
+    if (optionsForExpiry.length === 0) continue;
+
+    // We can group option contracts by strike
+    const strikes = [...new Set(optionsForExpiry.map(o => parseFloat(o.strike) / 100))].sort((a, b) => a - b);
+    if (strikes.length === 0) continue;
+
+    const closestStrike = strikes.reduce((prev, curr) => {
+      return Math.abs(curr - spotPrice) < Math.abs(prev - spotPrice) ? curr : prev;
+    });
+
+    const atmIdx = strikes.indexOf(closestStrike);
+    const startIdx = Math.max(0, atmIdx - 3);
+    const endIdx = Math.min(strikes.length - 1, atmIdx + 3);
+    const targetStrikes = strikes.slice(startIdx, endIdx + 1);
+
+    const targetTokens = optionsForExpiry.filter(
+      o => targetStrikes.includes(parseFloat(o.strike) / 100)
+    );
+
+    const tokensToFetch = targetTokens.map(o => o.token);
+
+    let ceOiSum = 0;
+    let peOiSum = 0;
+
+    const batchSize = 50;
+    for (let i = 0; i < tokensToFetch.length; i += batchSize) {
+      const batch = tokensToFetch.slice(i, i + batchSize);
+      const response = await axios.post(
+        'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
+        { mode: 'FULL', exchangeTokens: { 'NFO': batch } },
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-UserType': 'USER',
+            'X-SourceID': 'WEB',
+            'X-ClientLocalIP': '192.168.1.5',
+            'X-ClientPublicIP': '106.193.147.98',
+            'X-MACAddress': 'fe80::216e:6507:4b90:3719',
+            'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
+          }
+        }
+      );
+
+      if (response.data.status && response.data.data.fetched) {
+        response.data.data.fetched.forEach(item => {
+          const tokenDetails = targetTokens.find(t => t.token === item.symbolToken);
+          if (tokenDetails) {
+            const oi = parseInt(item.opnInterest || 0);
+            if (tokenDetails.symbol.endsWith('CE')) {
+              ceOiSum += oi;
+            } else if (tokenDetails.symbol.endsWith('PE')) {
+              peOiSum += oi;
+            }
+          }
+        });
+      }
+    }
+
+    const pcr = ceOiSum > 0 ? Number((peOiSum / ceOiSum).toFixed(2)) : 0;
+    summary.push({
+      expiry,
+      ceOi: ceOiSum,
+      peOi: peOiSum,
+      pcr
+    });
+  }
+
+  return { summary, spotPrice };
+};
+
+module.exports = { getExpiryDates, getOptionChain, getLivePrice, getIndexSpotPrice, getCandleData, getSymbolByToken, getMultiExpiryOiSummary };

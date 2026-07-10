@@ -36,7 +36,7 @@ const initWebSocket = async (userId) => {
 
     wsInstance = new WebSocketV2({
       jwttoken: authToken,
-      apikey: user.angelApiKey,
+      apikey: process.env.ANGEL_API_KEY || user.angelApiKey,
       clientcode: user.angelClientId,
       feedtype: feedToken
     });

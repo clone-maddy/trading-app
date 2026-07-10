@@ -15,6 +15,7 @@ const chatRoute = require('./routes/chat');
 const { initWebSocket, subscribeTokens, unsubscribeTokens, onTick, onCrossover, getStatus } = require('./services/websocketFeed');
 const { sendAlert, onAlert } = require('./services/notificationDispatcher');
 const AlertConfig = require('./models/AlertConfig');
+const { startTelegramBot } = require('./services/telegramBot');
 
 dotenv.config();
 
@@ -35,7 +36,11 @@ app.use(express.json());
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB connected successfully!'))
+  .then(() => {
+    console.log('MongoDB connected successfully!');
+    // Start background Telegram Bot update polling
+    startTelegramBot();
+  })
   .catch((err) => console.log('MongoDB connection error:', err));
 
 // Routes
@@ -179,23 +184,13 @@ onCrossover(async (token, crossoverPayload) => {
   try {
     const userIds = new Set();
     
-    // 1. Find all online users who currently watch this token on their dashboard
-    for (const [socketId, tokens] of clientSubscriptions.entries()) {
-      if (tokens.has(token)) {
-        const userId = socketToUser.get(socketId);
-        if (userId) {
-          userIds.add(userId);
-        }
-      }
-    }
-
-    // 2. ALSO query all users who have an active background AlertConfig for this token (even if they are offline/no open tab)
+    // Find all users who have an active background AlertConfig for this token
     const activeConfigs = await AlertConfig.find({ token });
     activeConfigs.forEach(c => {
       userIds.add(c.userId.toString());
     });
 
-    // 3. Dispatch the alert to each unique user
+    // Dispatch the alert to each unique user
     for (const userId of userIds) {
       await sendAlert(userId, crossoverPayload);
     }

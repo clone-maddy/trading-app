@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import Alerts from './pages/Alerts';
 import Account from './pages/Account';
 import Home from './pages/Home';
+import VerifyEmail from './pages/VerifyEmail';
 import ChatBot from './components/ChatBot';
 import { API, SOCKET_URL } from './config/api';
 import './App.css';
@@ -19,7 +20,33 @@ import './App.css';
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token');
+  const [loading, setLoading] = useState(true);
+  const [isVerified, setIsVerified] = useState(true);
+
+  useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        if (res.data.success && res.data.user) {
+          setIsVerified(res.data.user.isVerified !== false);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
+  }, [token]);
+
   if (!token) return <Navigate to="/login" replace />;
+  if (loading) return <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>⏳ Loading your profile...</div>;
+
+  if (!isVerified) {
+    return <Navigate to="/verify-email" replace />;
+  }
+
   return children;
 }
 
@@ -61,6 +88,7 @@ function Navbar() {
   const token = localStorage.getItem('token');
   const [unseenCount, setUnseenCount] = useState(0);
   const [tradingMode, setTradingMode] = useState('virtual');
+  const [isVerified, setIsVerified] = useState(true);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -90,6 +118,7 @@ function Navbar() {
       });
       if (res.data.success && res.data.user) {
         setTradingMode(res.data.user.tradingMode || 'virtual');
+        setIsVerified(res.data.user.isVerified !== false);
       }
     } catch (e) {
       console.log('Error fetching mode in navbar:', e.message);
@@ -123,6 +152,17 @@ function Navbar() {
   }, [token]);
 
   if (!token) return null;
+
+  if (!isVerified) {
+    return (
+      <nav className="navbar">
+        <span className="nav-brand">Chanakya</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <button className="btn-logout" onClick={handleLogout}>Logout</button>
+        </div>
+      </nav>
+    );
+  }
 
   return (
     <nav className="navbar">
@@ -209,6 +249,9 @@ function App() {
 
         {/* Account Settings Route */}
         <Route path="/account" element={<ProtectedRoute><Account /></ProtectedRoute>} />
+        
+        {/* Email Verification Route */}
+        <Route path="/verify-email" element={<VerifyEmail />} />
         
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

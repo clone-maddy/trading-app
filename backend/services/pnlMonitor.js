@@ -3,6 +3,7 @@ const VirtualTrade = require('../models/VirtualTrade');
 const { closeVirtualPosition } = require('../controllers/VirtualTradeController');
 const { getLivePrice } = require('./optionChain');
 const { getCachedPrice } = require('./websocketFeed');
+const { sendTelegramMessage } = require('./notificationDispatcher');
 
 // Monitor update callback registry for Socket.IO
 let monitorUpdateCallback = null;
@@ -301,8 +302,29 @@ const exitPosition = async (pos, mode, type = 'full', percent = 100, retries = 3
   const state = monitorStates[mode];
   if (mode === 'virtual') {
     try {
-      await closeVirtualPosition(pos._id, state.settings.userId, pos.currentPrice, reason);
-      console.log(`✅ Virtual Position Auto-Exited: ${pos.symbol} at ₹${pos.currentPrice} [Reason: ${reason}]`);
+      const closedTrade = await closeVirtualPosition(pos._id, state.settings.userId, pos.currentPrice, reason);
+      if (closedTrade) {
+        console.log(`✅ Virtual Position Auto-Exited: ${pos.symbol} at ₹${pos.currentPrice} [Reason: ${reason}]`);
+        
+        // Format and send Telegram notification
+        const pnl = closedTrade.pnl || 0;
+        const directionEmoji = pnl >= 0 ? '🟢 PROFIT' : '🔴 LOSS';
+        const pnlStr = pnl >= 0 ? `+₹${pnl.toFixed(2)}` : `-₹${Math.abs(pnl).toFixed(2)}`;
+        const reasonLabel = reason === 'TARGET_HIT' ? 'Target Reached' 
+                          : reason === 'STOPLOSS_HIT' ? 'Stop Loss Reached'
+                          : reason === 'TRAILING_SL_HIT' ? 'Trailing Stop Loss Reached'
+                          : reason === 'PARTIAL_EXIT' ? 'Partial Exit Reached'
+                          : reason;
+                          
+        const text = `🔔 <b>POSITION AUTO-EXITED (${directionEmoji})</b>\n\n` +
+                     `📈 <b>Contract:</b> <code>${pos.symbol}</code> (Virtual Mode)\n` +
+                     `🎯 <b>Reason:</b> ${reasonLabel}\n` +
+                     `💰 <b>Exit Price:</b> ₹${pos.currentPrice.toFixed(2)} (Qty: ${closedTrade.quantity})\n` +
+                     `💵 <b>Trade P&L:</b> <b>${pnlStr}</b>\n\n` +
+                     `🕒 <b>Time:</b> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
+                     
+        sendTelegramMessage(state.settings.userId, text);
+      }
       return;
     } catch (err) {
       console.log(`❌ Virtual auto-exit failed for ${pos.symbol}:`, err.message);
@@ -333,7 +355,27 @@ const exitPosition = async (pos, mode, type = 'full', percent = 100, retries = 3
         duration: 'DAY',
         quantity: exitQty
       }, state.settings.userId);
+      
       console.log(`✅ Exited ${pos.symbol} - ${exitQty} qty (attempt ${attempt})`);
+      
+      // Format and send Telegram notification
+      const pnl = parseFloat(pos.pnl || 0);
+      const directionEmoji = pnl >= 0 ? '🟢 PROFIT' : '🔴 LOSS';
+      const pnlStr = pnl >= 0 ? `+₹${pnl.toFixed(2)}` : `-₹${Math.abs(pnl).toFixed(2)}`;
+      const reasonLabel = reason === 'TARGET_HIT' ? 'Target Reached' 
+                        : reason === 'STOPLOSS_HIT' ? 'Stop Loss Reached'
+                        : reason === 'TRAILING_SL_HIT' ? 'Trailing Stop Loss Reached'
+                        : reason === 'PARTIAL_EXIT' ? 'Partial Exit Reached'
+                        : reason;
+                        
+      const text = `🔔 <b>POSITION AUTO-EXITED (${directionEmoji})</b>\n\n` +
+                   `📈 <b>Contract:</b> <code>${pos.symbol}</code> (Real Mode)\n` +
+                   `🎯 <b>Reason:</b> ${reasonLabel}\n` +
+                   `💰 <b>Exit Price:</b> ₹${parseFloat(pos.ltp || pos.currentPrice || 0).toFixed(2)} (Qty: ${exitQty})\n` +
+                   `💵 <b>Approx. P&L:</b> <b>${pnlStr}</b>\n\n` +
+                   `🕒 <b>Time:</b> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`;
+                   
+      sendTelegramMessage(state.settings.userId, text);
       return;
     } catch (error) {
       console.log(`❌ Exit attempt ${attempt} failed for ${pos.symbol}:`, error.message);

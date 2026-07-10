@@ -21,6 +21,7 @@ Tech Stack:
   - Real-Time Server: Socket.IO (with secure user-specific rooms mapping JWT userIds to sockets)
   - Broker Integration: smartapi-javascript (official SDK for AngelOne SmartAPI)
   - Security & Auth: JSON Web Tokens (JWT), Speakeasy (TOTP validation)
+  - Mailing & Onboarding: nodemailer (SMTP client)
 
 ========================================================================
 2. CORE BACKEND SERVICES (/backend/services)
@@ -52,6 +53,7 @@ C. Option Chain Module (backend/services/optionChain.js)
   - Queries expiries, extracts option chain layouts (Calls vs Puts per strike).
   - Fetches index spot prices and options candle data (1m, 5m, 15m, 1h, 1d timeframes) from AngelOne's historical APIs.
   - getSymbolByToken(token): Returns the formatted option contract symbol name for any token lookup.
+  - getMultiExpiryOiSummary(): Performs concurrent 7-strike open interest summaries and Put-Call Ratio (PCR) calculations across the first 5 near-term expiries.
 
 D. Real-Time Risk Monitor (backend/services/pnlMonitor.js)
 * Purpose: Implements programmatic risk-management rules on open positions.
@@ -77,7 +79,20 @@ F. Notification Dispatcher (backend/services/notificationDispatcher.js)
   - Pushes real-time Socket.IO alerts to active users.
   - Dispatches rich notification trading cards to the user's phone/desktop via Telegram Bot API when a telegramChatId is linked.
 
-G. Indicator Utilities (backend/utils/indicators.js)
+G. Telegram Polling Bot Service (backend/services/telegramBot.js)
+* Purpose: Background polling service that queries Telegram bot updates for deep links.
+* Key Operations:
+  - Auto-clears webhooks on startup to prevent 409 API conflicts.
+  - Evaluates incoming message starts `/start <userId>`, locates the MongoDB user, automatically links their chat ID, and sends a welcome confirmation.
+
+H. SMTP Email Service (backend/services/emailService.js)
+* Purpose: Integrates nodemailer SMTP connections with secure fallback mock logs.
+* Key Operations:
+  - Dispatches onboarding 6-digit verification code emails.
+  - Sends a responsive welcome onboarding guide email upon successful account verification.
+  - Supports platform-wide announcement/newsletter broadcasts to all users.
+
+I. Indicator Utilities (backend/utils/indicators.js)
 * Purpose: Mathematical definitions of technical indicators (calculateEMA).
 
 ========================================================================
@@ -86,7 +101,7 @@ G. Indicator Utilities (backend/utils/indicators.js)
 
 The database stores user profiles, authentication state, and logs for Virtual (Demo) Account performance and alerts:
 
-1. User Schema (backend/models/User.js): Holds user email, password hashes, telegramChatId, and default tradingMode ('real' or 'virtual').
+1. User Schema (backend/models/User.js): Holds user name, email, password hashes, telegramChatId, tradingMode, `isVerified` flag, and `verificationCode`.
 2. VirtualPortfolio Schema (backend/models/VirtualPortfolio.js): Holds demo account balances, win/loss stats, total P&L, and initial capital.
 3. VirtualTrade Schema (backend/models/VirtualTrade.js): Logs individual paper trades, execution entries/exits, P&L, status (OPEN/CLOSED), and reasons for exit (e.g., TARGET_HIT, STOPLOSS_HIT, MANUAL).
 4. Alert Schema (backend/models/Alert.js): Logs triggered alert history records (contract symbol, token, direction, EMA values, timestamp, seen flag).
@@ -100,17 +115,18 @@ The client side is styled to provide a premium, real-time command dashboard spli
 
 Real Account Area:
 * Real Dashboard (frontend/src/pages/RealDashboard.jsx): Lists live positions from AngelOne, tracks total P&L, displays global risk monitors (Target, SL, Trailing SL), and allows customizing individual stop-losses per contract.
-* Real Option Chain (frontend/src/pages/RealTrading.jsx): Provides a grid view of index strikes with Call/Put details, live bid/ask spreads, chart triggers, click-to-trade forms, and 🔔 alert monitoring buttons.
+* Real Option Chain (frontend/src/pages/RealTrading.jsx): Provides NIFTY/BANKNIFTY options contract tables with strike PCR summaries and a comparative multi-expiry 7-strike Open Interest comparison table.
 * Real Analytics (frontend/src/pages/Analytics.jsx): Displays reports and charts of executed real trades.
 
 Demo / Paper Trading Area:
 * Virtual Dashboard (frontend/src/pages/VirtualDashboard.jsx): Simulates the real dashboard experience. Includes current virtual balance, win rate, total trades log, and options to reset the portfolio.
-* Virtual Option Chain (frontend/src/pages/VirtualTrading.jsx): Allows simulated option buying or selling at current live market prices, with chart triggers and 🔔 alert monitoring buttons.
+* Virtual Option Chain (frontend/src/pages/VirtualTrading.jsx): Allows simulated option buying or selling at current live market prices, with strike PCR summaries and a comparative multi-expiry 7-strike Open Interest comparison table.
 * Virtual Analytics: Performance metrics for simulated strategies.
 
-Alerts & Settings Center:
+Alerts, Verification & Settings Center:
+* Email Verification (frontend/src/pages/VerifyEmail.jsx): Security gate checking verification status on login. Prompts users for their 6-digit code and hides standard dashboard navigation menus if unverified.
 * Alerts Dashboard (frontend/src/pages/Alerts.jsx): Displays triggered alerts log (mark-seen, delete actions), list of active stock configurations, and Telegram integration setup.
-* Account Dashboard (frontend/src/pages/Account.jsx): Manage personal profile, MPIN, TOTP secrets, API Keys, Telegram Chat IDs, and preferred default workspace.
+* Account Dashboard (frontend/src/pages/Account.jsx): Manage personal profile, MPIN, TOTP secrets, Telegram Chat IDs, and preferred default workspace. Includes one-click bot linkage and auto-detect status checking.
 * Navbar unseen bell: A bell icon with a real-time badge counting unseen notifications, playing a chime on alert delivery.
 * Navbar settings link: A settings gear button (⚙️) to open the Account page.
 

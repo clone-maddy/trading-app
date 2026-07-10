@@ -35,6 +35,8 @@ function VirtualTrading() {
   const [activeChart, setActiveChart] = useState(null);
   const [loadingChain, setLoadingChain] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  const [multiOiSummary, setMultiOiSummary] = useState([]);
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   const [tradeModal, setTradeModal] = useState(null);
   const [quantity, setQuantity] = useState(1);
@@ -151,9 +153,24 @@ function VirtualTrading() {
     };
   }, []);
 
+  const fetchMultiOiSummary = async (indexName) => {
+    setLoadingSummary(true);
+    try {
+      const res = await axios.get(`${API}/options/oi-summary/${indexName}`, { headers });
+      if (res.data.success) {
+        setMultiOiSummary(res.data.data || []);
+      }
+    } catch (err) {
+      console.log('Error fetching multi-expiry summary:', err.message);
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
   // Fetch expiries when selected index changes
   useEffect(() => {
     fetchExpiries(selectedIndex);
+    fetchMultiOiSummary(selectedIndex);
   }, [selectedIndex]);
 
   // Load option chain once expiry is loaded
@@ -364,7 +381,7 @@ function VirtualTrading() {
               ))}
             </select>
           </div>
-          <button className="btn-load" onClick={fetchOptionChain} disabled={loadingChain}>
+          <button className="btn-load" onClick={() => { fetchOptionChain(); fetchMultiOiSummary(selectedIndex); }} disabled={loadingChain}>
             {loadingChain ? '⏳ Loading...' : '🔄 Load Chain'}
           </button>
         </div>
@@ -396,6 +413,76 @@ function VirtualTrading() {
             >
               📊 View Spot Chart
             </button>
+          </div>
+        )}
+
+        {multiOiSummary.length > 0 && (
+          <div className="settings-card" style={{ padding: '16px', marginBottom: '24px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#1e293b', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569' }}>📊 7-Strike OI Summary across Expiries</h3>
+            {loadingSummary ? (
+              <div style={{ fontSize: '12px', color: '#64748b' }}>Loading summary data...</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
+                      <th style={{ padding: '10px 12px', fontWeight: '700' }}>Expiry</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>Total Call (CE) OI</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>Total Put (PE) OI</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>PCR</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '700' }}>Sentiment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {multiOiSummary.map((sum, idx) => {
+                      const isBullish = sum.pcr > 1.1;
+                      const isBearish = sum.pcr < 0.9;
+                      
+                      const sentimentText = isBullish ? 'Bullish' : (isBearish ? 'Bearish' : 'Neutral');
+                      const sentimentBg = isBullish ? '#dcfce7' : (isBearish ? '#fee2e2' : '#f1f5f9');
+                      const sentimentColor = isBullish ? '#15803d' : (isBearish ? '#b91c1c' : '#475569');
+                      
+                      const highlight = sum.expiry === selectedExpiry;
+                      return (
+                        <tr 
+                          key={idx} 
+                          style={{ 
+                            borderBottom: '1px solid #e2e8f0', 
+                            background: highlight ? '#e0f2fe' : 'transparent',
+                            fontWeight: highlight ? '700' : 'normal',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onClick={() => setSelectedExpiry(sum.expiry)}
+                          onMouseEnter={(e) => { if (!highlight) e.currentTarget.style.backgroundColor = '#f1f5f9'; }}
+                          onMouseLeave={(e) => { if (!highlight) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <td style={{ padding: '10px 12px', color: highlight ? '#0369a1' : '#0f172a' }}>
+                            {sum.expiry} {highlight && '👈'}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#b91c1c' }}>{sum.ceOi.toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#15803d' }}>{sum.peOi.toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: '#0f172a' }}>{sum.pcr.toFixed(2)}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                            <span style={{ 
+                              display: 'inline-block',
+                              padding: '4px 8px', 
+                              borderRadius: '4px', 
+                              fontSize: '11px', 
+                              fontWeight: '700',
+                              backgroundColor: sentimentBg,
+                              color: sentimentColor
+                            }}>
+                              {sentimentText}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

@@ -16,9 +16,14 @@ const connectAngelOne = async (userId) => {
     if (!user) {
       throw new Error('User account not found!');
     }
-    if (!user.angelClientId || !user.angelMpin || !user.angelTotpSecret || !user.angelApiKey) {
+    const apiKey = process.env.ANGEL_API_KEY || user.angelApiKey;
+    if (!user.angelClientId || !user.angelMpin || !user.angelTotpSecret || !apiKey) {
       throw new Error('AngelOne broker credentials are not configured. Please enter them in your Account settings page.');
     }
+
+    const { decrypt } = require('../utils/encryption');
+    const decryptedMpin = decrypt(user.angelMpin);
+    const decryptedTotpSecret = decrypt(user.angelTotpSecret);
 
     const session = activeSessions[userId] || {};
 
@@ -28,7 +33,7 @@ const connectAngelOne = async (userId) => {
     }
 
     // Strip whitespaces if any in TOTP Secret
-    const totpSecret = user.angelTotpSecret.replace(/\s+/g, '');
+    const totpSecret = decryptedTotpSecret.replace(/\s+/g, '');
     const totp = speakeasy.totp({
       secret: totpSecret,
       encoding: 'base32'
@@ -38,7 +43,7 @@ const connectAngelOne = async (userId) => {
       'https://apiconnect.angelone.in/rest/auth/angelbroking/user/v1/loginByPassword',
       {
         clientcode: user.angelClientId,
-        password: user.angelMpin,
+        password: decryptedMpin,
         totp: totp
       },
       {
@@ -50,7 +55,7 @@ const connectAngelOne = async (userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': apiKey
         }
       }
     );
@@ -93,7 +98,7 @@ const getPositions = async (userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );
@@ -129,7 +134,7 @@ const placeOrder = async (orderParams, userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );
@@ -159,7 +164,7 @@ const getTradeBook = async (userId) => {
           'X-ClientLocalIP': '192.168.1.5',
           'X-ClientPublicIP': '106.193.147.98',
           'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-          'X-PrivateKey': user.angelApiKey
+          'X-PrivateKey': process.env.ANGEL_API_KEY || user.angelApiKey
         }
       }
     );

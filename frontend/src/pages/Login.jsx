@@ -28,8 +28,13 @@ function Login() {
       const res = await axios.post(`${API}${endpoint}`, payload);
       if (res.data.token) {
         localStorage.setItem('token', res.data.token);
-        toast.success(isLogin ? 'Logged in!' : 'Registered successfully!');
-        navigate('/');
+        if (res.data.needsVerification) {
+          toast.success('Account verification code sent!');
+          navigate('/verify-email');
+        } else {
+          toast.success(isLogin ? 'Logged in!' : 'Registered successfully!');
+          navigate('/');
+        }
       } else {
         toast.error(res.data.message || 'Something went wrong!');
       }

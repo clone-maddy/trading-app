@@ -40,6 +40,14 @@ const UserSchema = new mongoose.Schema({
     enum: ['real', 'virtual'],
     default: 'virtual'
   },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  verificationCode: {
+    type: String,
+    default: ''
+  },
   createdAt: {
     type: Date,
     default: Date.now
