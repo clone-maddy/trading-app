@@ -6,3 +6,4 @@ backend/error.log
 *.log
 AngelOne TOTP key.txt
 mongoDB connection string.txt
+*.pem
