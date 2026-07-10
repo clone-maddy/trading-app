@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import {
-  AreaChart,
+  ComposedChart,
   Area,
   LineChart,
   Line,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,20 +15,240 @@ import {
   ResponsiveContainer,
   ReferenceDot
 } from 'recharts';
+import { API, SOCKET_URL } from '../config/api';
 
-const API = 'http://localhost:5000/api';
-const SOCKET_URL = 'http://localhost:5000';
+// Custom Candlestick shape for Recharts Bar component
+const Candlestick = React.memo((props) => {
+  const { x, y, width, height, payload } = props;
+  if (!payload || typeof payload.open !== 'number' || typeof payload.close !== 'number') return null;
+  const { open, close, high, low } = payload;
+  const isBullish = close >= open;
+  const color = isBullish ? '#22c55e' : '#ef4444';
+
+  const bodyRange = Math.abs(open - close);
+  if (bodyRange === 0) {
+    const wickX = x + width / 2;
+    return (
+      <g>
+        <line x1={wickX} y1={y - (high - open)} x2={wickX} y2={y + (open - low)} stroke={color} strokeWidth={1.5} />
+        <line x1={x} y1={y} x2={x + width} y2={y} stroke={color} strokeWidth={2} />
+      </g>
+    );
+  }
+
+  const yRatio = height / bodyRange;
+  const bodyTop = y;
+  const bodyBottom = y + height;
+
+  const highY = isBullish 
+    ? bodyTop - (high - close) * yRatio
+    : bodyTop - (high - open) * yRatio;
+    
+  const lowY = isBullish
+    ? bodyBottom + (open - low) * yRatio
+    : bodyBottom + (close - low) * yRatio;
+
+  const bodyWidth = Math.max(width, 5);
+  const wickX = x + bodyWidth / 2;
+
+  return (
+    <g>
+      {/* Wick line */}
+      <line 
+        x1={wickX} 
+        y1={highY} 
+        x2={wickX} 
+        y2={lowY} 
+        stroke={color} 
+        strokeWidth={1.5} 
+      />
+      {/* Body */}
+      <rect
+        x={x}
+        y={y}
+        width={bodyWidth}
+        height={Math.max(height, 2)}
+        fill={color}
+        stroke={color}
+        strokeWidth={1}
+      />
+    </g>
+  );
+});
 
 function StockChart({ token, symbol, exchange, onClose }) {
   const [candles, setCandles] = useState([]);
   const [interval, setIntervalVal] = useState('FIVE_MINUTE');
   const [loading, setLoading] = useState(false);
+  const [chartType, setChartType] = useState('candlestick');
+  const [visibleCount, setVisibleCount] = useState(35);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  
+  const chartContainerRef = useRef(null);
+  const dragStartX = useRef(0);
+  const dragStartOffset = useRef(0);
+
+  const candlesLengthRef = useRef(0);
+  const visibleCountRef = useRef(35);
+  const isHoveringChart = useRef(false);
+  const wheelAccumulator = useRef(0);
+  const animationFrameId = useRef(null);
+
+
+
+
+  useEffect(() => {
+    visibleCountRef.current = visibleCount;
+  }, [visibleCount]);
+
+  // Global window wheel and gesture listeners to block browser page zoom and zoom the chart instead
+  useEffect(() => {
+    const panAccumulator = { current: 0 };
+    let wheelRafId = null;
+
+    const handleGlobalWheel = (e) => {
+      if (isHoveringChart.current) {
+        e.preventDefault();
+        
+        // Determine intent: horizontal swipe vs vertical zoom
+        const isHorizontalSwipe = Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey;
+        
+        if (isHorizontalSwipe) {
+          panAccumulator.current += e.deltaX;
+        } else {
+          wheelAccumulator.current += e.deltaY;
+        }
+        
+        // Throttle all state updates to screen refresh rate
+        if (wheelRafId) return;
+        wheelRafId = requestAnimationFrame(() => {
+          wheelRafId = null;
+          
+          // Process horizontal pan
+          const panThreshold = 50;
+          if (Math.abs(panAccumulator.current) >= panThreshold) {
+            const panStep = Math.max(1, Math.round(Math.abs(panAccumulator.current) / panThreshold));
+            const direction = panAccumulator.current > 0 ? -panStep : panStep;
+            setScrollOffset(prev => {
+              const maxOff = Math.max(0, candlesLengthRef.current - visibleCountRef.current);
+              return Math.max(0, Math.min(maxOff, prev + direction));
+            });
+            panAccumulator.current = 0;
+          }
+          
+          // Process vertical zoom
+          const zoomThreshold = e.ctrlKey ? 30 : 80;
+          if (Math.abs(wheelAccumulator.current) >= zoomThreshold) {
+            const isZoomIn = wheelAccumulator.current < 0;
+            const zoomAmount = Math.max(1, Math.round(visibleCountRef.current * 0.08));
+            const step = isZoomIn ? -zoomAmount : zoomAmount;
+            
+            setVisibleCount(prev => {
+              const nextCount = prev + step;
+              const validCount = Math.max(10, Math.min(candlesLengthRef.current, nextCount));
+              return prev !== validCount ? validCount : prev;
+            });
+            
+            wheelAccumulator.current = 0;
+          }
+        });
+      }
+    };
+
+    const handleGlobalGesture = (e) => {
+      if (isHoveringChart.current) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('wheel', handleGlobalWheel, { passive: false });
+    window.addEventListener('gesturestart', handleGlobalGesture, { passive: false });
+    window.addEventListener('gesturechange', handleGlobalGesture, { passive: false });
+    
+    return () => {
+      window.removeEventListener('wheel', handleGlobalWheel);
+      window.removeEventListener('gesturestart', handleGlobalGesture);
+      window.removeEventListener('gesturechange', handleGlobalGesture);
+      if (wheelRafId) cancelAnimationFrame(wheelRafId);
+    };
+  }, []);
+
+  // Keyboard Arrow Key Zoom and Pan controls for accessibility
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (candlesLengthRef.current === 0) return;
+      
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setVisibleCount(prev => Math.max(10, prev - 3));
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setVisibleCount(prev => Math.min(candlesLengthRef.current, prev + 3));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setScrollOffset(prev => Math.min(candlesLengthRef.current - visibleCountRef.current, prev + 3));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setScrollOffset(prev => Math.max(0, prev - 3));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const handleMouseDown = (e) => {
+    // Only drag with left mouse click
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    dragStartX.current = e.clientX;
+    dragStartOffset.current = scrollOffset;
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    
+    const clientX = e.clientX;
+    
+    // Throttle rendering updates to requestAnimationFrame (60 FPS) to eliminate drag lag
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
+    }
+    
+    animationFrameId.current = requestAnimationFrame(() => {
+      const deltaX = clientX - dragStartX.current;
+      
+      // Increased scale to 18px per candle for smoother mouse drag sensitivity
+      const candleWidthPx = 18;
+      const offsetDelta = Math.round(deltaX / candleWidthPx);
+      
+      const newOffset = Math.max(0, Math.min(candlesLengthRef.current - visibleCountRef.current, dragStartOffset.current + offsetDelta));
+      
+      setScrollOffset(prev => {
+        if (prev !== newOffset) return newOffset;
+        return prev;
+      });
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
+    }
+  };
   
   // Indicators
   const [showSMA9, setShowSMA9] = useState(false);
   const [showSMA21, setShowSMA21] = useState(false);
   const [showEMA9, setShowEMA9] = useState(true);
   const [showEMA21, setShowEMA21] = useState(true);
+  const [showEMA35, setShowEMA35] = useState(false);
+  const [showEMA50, setShowEMA50] = useState(false);
   const [showRSI, setShowRSI] = useState(false);
   const [triggeredAlerts, setTriggeredAlerts] = useState([]);
 
@@ -61,17 +282,93 @@ function StockChart({ token, symbol, exchange, onClose }) {
         { headers: { Authorization: `Bearer ${userToken}` } }
       );
       if (res.data.success && Array.isArray(res.data.data)) {
+        // Sort chronologically ascending to fix broken timeline
+        const sorted = [...res.data.data].sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime());
+        
+        // Detect if dataset spans across multiple days
+        const uniqueDates = [...new Set(sorted.map(c => new Date(c[0]).toLocaleDateString()))];
+        const isMultiDay = uniqueDates.length > 1;
+
         // Map AngelOne array format: [time, open, high, low, close, volume]
-        const formatted = res.data.data.map(c => ({
-          time: new Date(c[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          date: new Date(c[0]).toLocaleDateString(),
-          open: Number(c[1]),
-          high: Number(c[2]),
-          low: Number(c[3]),
-          close: Number(c[4]),
-          volume: Number(c[5])
-        }));
-        setCandles(formatted);
+        const formatted = sorted.map(c => {
+          const dt = new Date(c[0]);
+          const open = Number(c[1]);
+          const close = Number(c[4]);
+          
+          const timeStr = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const dateLabel = dt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          const standardDate = dt.toLocaleDateString();
+          
+          return {
+            time: isMultiDay ? `${dateLabel} ${timeStr}` : timeStr,
+            timeOnly: timeStr,
+            date: standardDate,
+            open,
+            high: Number(c[2]),
+            low: Number(c[3]),
+            close,
+            volume: Number(c[5]),
+            openClose: [open, close],
+            _timestamp: dt.getTime() // Keep raw timestamp for gap-fill
+          };
+        });
+
+        // Gap-fill: insert flat candles for missing time slots (like Kite does for illiquid options)
+        const intervalMinutes = {
+          'ONE_MINUTE': 1,
+          'FIVE_MINUTE': 5,
+          'FIFTEEN_MINUTE': 15,
+          'ONE_HOUR': 60
+        };
+        const gapMinutes = intervalMinutes[interval];
+        
+        let filled = formatted;
+        if (gapMinutes && formatted.length > 1) {
+          filled = [];
+          const gapMs = gapMinutes * 60 * 1000;
+          
+          for (let i = 0; i < formatted.length; i++) {
+            filled.push(formatted[i]);
+            
+            if (i < formatted.length - 1) {
+              const currentTs = formatted[i]._timestamp;
+              const nextTs = formatted[i + 1]._timestamp;
+              const currentDate = formatted[i].date;
+              const nextDate = formatted[i + 1].date;
+              
+              // Only fill gaps within the same trading day
+              if (currentDate === nextDate) {
+                let fillTs = currentTs + gapMs;
+                const prevClose = formatted[i].close;
+                
+                while (fillTs < nextTs) {
+                  const fillDt = new Date(fillTs);
+                  const fillTimeStr = fillDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  const fillDateLabel = fillDt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                  const fillStandardDate = fillDt.toLocaleDateString();
+                  
+                  filled.push({
+                    time: isMultiDay ? `${fillDateLabel} ${fillTimeStr}` : fillTimeStr,
+                    timeOnly: fillTimeStr,
+                    date: fillStandardDate,
+                    open: prevClose,
+                    high: prevClose,
+                    low: prevClose,
+                    close: prevClose,
+                    volume: 0,
+                    openClose: [prevClose, prevClose],
+                    _timestamp: fillTs
+                  });
+                  fillTs += gapMs;
+                }
+              }
+            }
+          }
+        }
+
+        setCandles(filled);
+        setVisibleCount(Math.min(50, filled.length));
+        setScrollOffset(0);
       }
     } catch (error) {
       toast.error('Failed to load chart data!');
@@ -196,11 +493,46 @@ function StockChart({ token, symbol, exchange, onClose }) {
     setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
-  // Calculate technical indicators
-  const getProcessedData = () => {
+  // Calculate technical indicators - Memoized to prevent heavy loop calculations on every scroll/drag frame
+  const processedData = useMemo(() => {
     let data = [...candles];
     if (data.length === 0) return [];
 
+    // Official NSE Trading Holidays 2026 (source: nseindia.com)
+    const nseHolidays2026 = new Set([
+      '2026-01-15', // Municipal Corporation Election
+      '2026-01-26', // Republic Day
+      '2026-03-03', // Holi
+      '2026-03-26', // Shri Ram Navami
+      '2026-03-31', // Shri Mahavir Jayanti
+      '2026-04-03', // Good Friday
+      '2026-04-14', // Dr. Ambedkar Jayanti
+      '2026-05-01', // Maharashtra Day
+      '2026-05-28', // Bakri Id
+      '2026-06-26', // Muharram
+      '2026-09-14', // Ganesh Chaturthi
+      '2026-10-02', // Mahatma Gandhi Jayanti
+      '2026-10-20', // Dussehra
+      '2026-11-10', // Diwali Balipratipada
+      '2026-11-24', // Guru Nanak Jayanti
+      '2026-12-25', // Christmas
+    ]);
+
+    // Filter out weekends and official holidays
+    data = data.filter(d => {
+      const dt = new Date(d._timestamp || d.date);
+      const day = dt.getDay();
+      if (day === 0 || day === 6) return false; // Weekend
+      
+      // Check against holiday set (YYYY-MM-DD format)
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const isoDate = `${yyyy}-${mm}-${dd}`;
+      if (nseHolidays2026.has(isoDate)) return false;
+      
+      return true;
+    });
     // SMA 9 Calculation
     if (showSMA9) {
       data = data.map((d, idx) => {
@@ -257,6 +589,42 @@ function StockChart({ token, symbol, exchange, onClose }) {
       data = data.map(d => ({ ...d, ema21: null }));
     }
 
+    // EMA 35 Calculation
+    if (data.length >= 35) {
+      const ema35Values = new Array(data.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < 35; i++) sum += data[i].close;
+      ema35Values[34] = sum / 35;
+      const multiplier = 2 / 36;
+      for (let i = 35; i < data.length; i++) {
+        ema35Values[i] = (data[i].close - ema35Values[i - 1]) * multiplier + ema35Values[i - 1];
+      }
+      data = data.map((d, idx) => ({
+        ...d,
+        ema35: ema35Values[idx] !== null ? Number(ema35Values[idx].toFixed(2)) : null
+      }));
+    } else {
+      data = data.map(d => ({ ...d, ema35: null }));
+    }
+
+    // EMA 50 Calculation
+    if (data.length >= 50) {
+      const ema50Values = new Array(data.length).fill(null);
+      let sum = 0;
+      for (let i = 0; i < 50; i++) sum += data[i].close;
+      ema50Values[49] = sum / 50;
+      const multiplier = 2 / 51;
+      for (let i = 50; i < data.length; i++) {
+        ema50Values[i] = (data[i].close - ema50Values[i - 1]) * multiplier + ema50Values[i - 1];
+      }
+      data = data.map((d, idx) => ({
+        ...d,
+        ema50: ema50Values[idx] !== null ? Number(ema50Values[idx].toFixed(2)) : null
+      }));
+    } else {
+      data = data.map(d => ({ ...d, ema50: null }));
+    }
+
     // RSI 14 Calculation
     if (showRSI && data.length > 15) {
       let gains = 0;
@@ -288,14 +656,54 @@ function StockChart({ token, symbol, exchange, onClose }) {
     }
 
     return data;
-  };
+  }, [candles, showSMA9, showSMA21, showEMA9, showEMA21, showEMA35, showEMA50, showRSI]);
+  
+  // Dynamic slice for Zoom & Pan
+  const totalCandles = processedData.length;
+  
+  // Keep ref in sync with the actual displayed dataset length (used by wheel/drag handlers)
+  candlesLengthRef.current = totalCandles;
+  
+  const currentVisibleCount = Math.min(visibleCount, totalCandles);
+  const maxOffset = Math.max(0, totalCandles - currentVisibleCount);
+  const currentOffset = Math.max(0, Math.min(maxOffset, scrollOffset));
+  
+  const endIndex = Math.min(totalCandles, totalCandles - currentOffset);
+  const startIndex = Math.max(0, endIndex - currentVisibleCount);
+  const visibleData = totalCandles > 0 ? processedData.slice(startIndex, endIndex) : [];
 
-  const processedData = getProcessedData();
   const currentLTP = candles.length > 0 ? candles[candles.length - 1].close : '-';
+
+  const modalStyle = isFullScreen ? {
+    width: '100vw',
+    height: '100vh',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    zIndex: 1000,
+    borderRadius: 0,
+    padding: '24px',
+    background: '#ffffff',
+    color: '#1e293b',
+    boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column'
+  } : {
+    width: '95%',
+    maxWidth: '1300px',
+    padding: '24px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    color: '#1e293b',
+    maxHeight: '90vh',
+    overflowY: 'auto'
+  };
 
   return (
     <div className="modal-overlay" style={{ zIndex: 100 }}>
-      <div className="modal" style={{ width: '90%', maxWidth: '1000px', padding: '24px', borderRadius: '16px', background: '#ffffff', color: '#1e293b' }}>
+      <div className="modal" style={modalStyle}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -307,17 +715,63 @@ function StockChart({ token, symbol, exchange, onClose }) {
               Exchange: <span style={{ fontWeight: '600' }}>{exchange}</span> | Live LTP: <strong style={{ color: '#047857', fontSize: '15px' }}>₹{currentLTP}</strong>
             </p>
           </div>
-          <button 
-            onClick={onClose} 
-            style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#94a3b8' }}
-          >
-            ✕
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button 
+              onClick={() => setIsFullScreen(!isFullScreen)} 
+              title={isFullScreen ? "Exit Fullscreen" : "Fullscreen"}
+              style={{ border: 'none', background: 'none', fontSize: '20px', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}
+            >
+              {isFullScreen ? '🗗' : '🖥️'}
+            </button>
+            <button 
+              onClick={onClose} 
+              style={{ border: 'none', background: 'none', fontSize: '24px', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Controls Panel */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '10px', marginBottom: '16px', alignItems: 'center' }}>
           
+          {/* Chart Type Toggle */}
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={() => setChartType('area')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: chartType === 'area' ? '#0ea5e9' : '#ffffff',
+                color: chartType === 'area' ? '#ffffff' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              📈 Area
+            </button>
+            <button
+              onClick={() => setChartType('candlestick')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: chartType === 'candlestick' ? '#10b981' : '#ffffff',
+                color: chartType === 'candlestick' ? '#ffffff' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              🕯️ Candles
+            </button>
+
+          </div>
+
+          <div style={{ width: '1px', height: '24px', background: '#e2e8f0' }} />
+
           {/* Timeframe selector */}
           <div style={{ display: 'flex', gap: '4px' }}>
             {['ONE_MINUTE', 'FIVE_MINUTE', 'FIFTEEN_MINUTE', 'ONE_HOUR', 'ONE_DAY'].map(timeframe => {
@@ -351,7 +805,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
           <div style={{ width: '1px', height: '24px', background: '#e2e8f0' }} />
 
           {/* Indicator toggles */}
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
             <button
               onClick={() => setShowSMA9(!showSMA9)}
               style={{
@@ -413,6 +867,36 @@ function StockChart({ token, symbol, exchange, onClose }) {
               EMA 21
             </button>
             <button
+              onClick={() => setShowEMA35(!showEMA35)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: showEMA35 ? '#ffedd5' : '#ffffff',
+                color: showEMA35 ? '#ea580c' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              EMA 35
+            </button>
+            <button
+              onClick={() => setShowEMA50(!showEMA50)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                background: showEMA50 ? '#f3e8ff' : '#ffffff',
+                color: showEMA50 ? '#7c3aed' : '#475569',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              EMA 50
+            </button>
+            <button
               onClick={() => setShowRSI(!showRSI)}
               style={{
                 padding: '6px 12px',
@@ -431,7 +915,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
         </div>
 
         {/* Content Layout: Chart (Left) + Alerts Manager (Right) */}
-        <div style={{ display: 'flex', gap: '20px', height: '400px' }}>
+        <div style={{ display: 'flex', gap: '20px', height: isFullScreen ? 'calc(100vh - 170px)' : '550px', flex: isFullScreen ? 1 : 'none' }}>
           
           {/* Chart Panel */}
           <div style={{ flex: 3, display: 'flex', flexDirection: 'column', height: '100%', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
@@ -439,17 +923,34 @@ function StockChart({ token, symbol, exchange, onClose }) {
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
                 ⏳ Loading charts...
               </div>
-            ) : processedData.length === 0 ? (
+            ) : visibleData.length === 0 ? (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
                 📭 No historical candle data available.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: '10px' }}>
                 
-                {/* Main Area Chart */}
-                <div style={{ flex: showRSI ? 2.5 : 1, width: '100%' }}>
+                {/* Main Area / Candlestick Chart */}
+                <div 
+                  ref={chartContainerRef}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseEnter={() => { isHoveringChart.current = true; }}
+                  onMouseLeave={() => { isHoveringChart.current = false; handleMouseUp(); }}
+                  style={{ 
+                    flex: showRSI ? 2.5 : 1, 
+                    width: '100%', 
+                    position: 'relative', 
+                    cursor: isDragging ? 'grabbing' : 'grab',
+                    userSelect: 'none',
+                    outline: 'none'
+                  }}
+                >
+
+
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={processedData}>
+                    <ComposedChart data={visibleData}>
                       <defs>
                         <linearGradient id="colorClose" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.2}/>
@@ -461,7 +962,8 @@ function StockChart({ token, symbol, exchange, onClose }) {
                         dataKey="time" 
                         stroke="#94a3b8" 
                         fontSize={11} 
-                        tickLine={false} 
+                        tickLine={false}
+                        minTickGap={50}
                       />
                       <YAxis 
                         domain={['auto', 'auto']} 
@@ -471,18 +973,33 @@ function StockChart({ token, symbol, exchange, onClose }) {
                         orientation="right"
                         tickFormatter={(v) => `₹${v.toFixed(0)}`}
                       />
-                      <Tooltip 
-                        contentStyle={{ background: '#0f172a', borderRadius: '8px', border: 'none', color: '#ffffff', fontSize: '12px' }}
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="close" 
-                        stroke="#0ea5e9" 
-                        strokeWidth={2} 
-                        fillOpacity={1} 
-                        fill="url(#colorClose)" 
-                        name="Price"
-                      />
+                      {!isDragging && (
+                        <Tooltip 
+                          contentStyle={{ background: '#0f172a', borderRadius: '8px', border: 'none', color: '#ffffff', fontSize: '12px' }}
+                          isAnimationActive={false}
+                        />
+                      )}
+                      
+                      {chartType === 'area' ? (
+                        <Area 
+                          type="monotone" 
+                          dataKey="close" 
+                          stroke="#0ea5e9" 
+                          strokeWidth={2} 
+                          fillOpacity={1} 
+                          fill="url(#colorClose)" 
+                          name="Price"
+                          isAnimationActive={false}
+                        />
+                      ) : (
+                        <Bar 
+                          dataKey="openClose" 
+                          name="Candle"
+                          shape={<Candlestick />}
+                          isAnimationActive={false}
+                        />
+                      )}
+
                       {showSMA9 && (
                         <Line 
                           type="monotone" 
@@ -491,6 +1008,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           strokeWidth={1.5} 
                           dot={false}
                           name="SMA (9)"
+                          isAnimationActive={false}
                         />
                       )}
                       {showSMA21 && (
@@ -501,6 +1019,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           strokeWidth={1.5} 
                           dot={false}
                           name="SMA (21)"
+                          isAnimationActive={false}
                         />
                       )}
                       {showEMA9 && (
@@ -511,6 +1030,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           strokeWidth={2} 
                           dot={false}
                           name="EMA (9)"
+                          isAnimationActive={false}
                         />
                       )}
                       {showEMA21 && (
@@ -521,15 +1041,38 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           strokeWidth={2} 
                           dot={false}
                           name="EMA (21)"
+                          isAnimationActive={false}
+                        />
+                      )}
+                      {showEMA35 && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="ema35" 
+                          stroke="#ea580c" 
+                          strokeWidth={2} 
+                          dot={false}
+                          name="EMA (35)"
+                          isAnimationActive={false}
+                        />
+                      )}
+                      {showEMA50 && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="ema50" 
+                          stroke="#7c3aed" 
+                          strokeWidth={2} 
+                          dot={false}
+                          name="EMA (50)"
+                          isAnimationActive={false}
                         />
                       )}
                       
                       {/* Render crossover markers */}
-                      {processedData.map((d, idx) => {
+                      {visibleData.map((d, idx) => {
                         const alert = triggeredAlerts.find(a => {
                           const alertTime = new Date(a.triggeredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                           const alertDate = new Date(a.triggeredAt).toLocaleDateString();
-                          return alertTime === d.time && alertDate === d.date;
+                          return alertTime === d.timeOnly && alertDate === d.date;
                         });
 
                         if (alert && d.ema9 !== null) {
@@ -555,7 +1098,8 @@ function StockChart({ token, symbol, exchange, onClose }) {
                         }
                         return null;
                       })}
-                    </AreaChart>
+
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
 
@@ -564,7 +1108,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
                   <div style={{ flex: 1, borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
                     <h4 style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: '700' }}>RSI (14)</h4>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={processedData}>
+                      <LineChart data={visibleData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="time" hide />
                         <YAxis 
@@ -575,7 +1119,9 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           orientation="right" 
                           tickLine={false}
                         />
-                        <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '8px', border: 'none', color: '#ffffff', fontSize: '11px' }} />
+                        {!isDragging && (
+                          <Tooltip contentStyle={{ background: '#0f172a', borderRadius: '8px', border: 'none', color: '#ffffff', fontSize: '11px' }} isAnimationActive={false} />
+                        )}
                         <Line 
                           type="monotone" 
                           dataKey="rsi" 
@@ -583,6 +1129,7 @@ function StockChart({ token, symbol, exchange, onClose }) {
                           strokeWidth={1.5} 
                           dot={false}
                           name="RSI"
+                          isAnimationActive={false}
                         />
                       </LineChart>
                     </ResponsiveContainer>

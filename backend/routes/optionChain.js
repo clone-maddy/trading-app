@@ -18,7 +18,7 @@ router.get('/expiry/:index', authMiddleware, async (req, res) => {
 router.get('/chain/:index/:expiry', authMiddleware, async (req, res) => {
   try {
     const { index, expiry } = req.params;
-    const chain = await getOptionChain(index.toUpperCase(), expiry.toUpperCase());
+    const chain = await getOptionChain(index.toUpperCase(), expiry.toUpperCase(), req.userId);
     const spotPrice = await getIndexSpotPrice(index, req.userId);
     res.json({ success: true, data: chain, spotPrice });
   } catch (error) {

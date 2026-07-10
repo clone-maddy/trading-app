@@ -2,9 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 import { io } from 'socket.io-client';
-
-const API = 'http://localhost:5000/api';
-const SOCKET_URL = 'http://localhost:5000';
+import { API, SOCKET_URL } from '../config/api';
 
 function Alerts() {
   const [activeTab, setActiveTab] = useState('history');
@@ -84,19 +82,9 @@ function Alerts() {
 
   const fetchTelegramId = async () => {
     try {
-      // Decode user profile to read telegram ID, or we can just fetch it from backend user object
-      const res = await axios.get(`${API}/auth/me`, { headers }).catch(async () => {
-        // Fallback: decode JWT locally
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          const userRes = await axios.get(`${API}/auth/user/${payload.userId}`, { headers });
-          return userRes;
-        } catch (e) {
-          return { data: { success: false } };
-        }
-      });
-      if (res.data.success && res.data.data?.telegramChatId) {
-        setTelegramChatId(res.data.data.telegramChatId);
+      const res = await axios.get(`${API}/auth/me`, { headers });
+      if (res.data.success && res.data.user?.telegramChatId) {
+        setTelegramChatId(res.data.user.telegramChatId);
       }
     } catch (error) {
       console.log('Failed to fetch user Telegram ID', error.message);

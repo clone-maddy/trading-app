@@ -1,3 +1,6 @@
 add the sum of OI's of both sides 7 each 3up and 3down with the ATM for each expiry
 we can add a message system that notifies the user on successful auto square off via the telegram system that we are using Currently
 different users have differnet account with brokers solve that part currently we hard coded my angelone id and access token in the code
+indicators - ema9 ema21 ema35 ema50
+chart timeline is broken 
+put candle stick

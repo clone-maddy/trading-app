@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-
-const API = 'http://localhost:5000/api';
+import { API } from '../config/api';
 
 function Login() {
   const [isLogin, setIsLogin] = useState(true);

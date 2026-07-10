@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-
-const API = 'http://localhost:5000/api';
+import { API } from '../config/api';
 
 function ChatBot() {
   const [isOpen, setIsOpen] = useState(false);

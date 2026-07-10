@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-
-const API = 'http://localhost:5000/api';
+import { API } from '../config/api';
 
 function Analytics({ mode = 'virtual' }) {
   const [history, setHistory] = useState([]);

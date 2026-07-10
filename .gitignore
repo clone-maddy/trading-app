@@ -2,3 +2,7 @@ node_modules
 .env
 scripmaster.json
 credentials.txt
+backend/error.log
+*.log
+AngelOne TOTP key.txt
+mongoDB connection string.txt

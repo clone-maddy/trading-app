@@ -6,16 +6,86 @@ const User = require('../models/User');
 
 let scripMaster = null;
 
+// Automatically download fresh scrip master if older than 24 hours on load
+const checkAndDownloadScripMaster = async () => {
+  const filePath = path.join(__dirname, '..', 'scripmaster.json');
+  const tempPath = filePath + '.tmp';
+  let needsDownload = false;
+  if (!fs.existsSync(filePath)) {
+    needsDownload = true;
+  } else {
+    try {
+      const stats = fs.statSync(filePath);
+      const ageHours = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60);
+      if (ageHours > 24) {
+        needsDownload = true;
+      }
+    } catch (e) {
+      needsDownload = true;
+    }
+  }
+
+  if (needsDownload) {
+    console.log('🔄 Scrip master is missing or older than 24 hours. Fetching fresh copy from AngelOne...');
+    try {
+      const url = 'https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json';
+      const response = await axios({
+        method: 'get',
+        url: url,
+        responseType: 'stream'
+      });
+
+      await new Promise((resolve, reject) => {
+        const writer = fs.createWriteStream(tempPath);
+        response.data.pipe(writer);
+        writer.on('finish', () => {
+          try {
+            fs.renameSync(tempPath, filePath);
+            console.log('✅ Fresh scrip master downloaded and replaced atomically!');
+            scripMaster = null; // Clear cache
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        });
+        writer.on('error', (err) => {
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+          reject(err);
+        });
+      });
+    } catch (err) {
+      console.log('⚠️ Failed to download fresh scrip master:', err.message);
+    }
+  }
+};
+
+// Trigger download check immediately on load
+checkAndDownloadScripMaster().catch(err => console.log('Scrip master boot check failed:', err.message));
+
 // Load scrip master file
 const loadScripMaster = () => {
   if (scripMaster) return scripMaster;
   const filePath = path.join(__dirname, '..', 'scripmaster.json');
   if (!fs.existsSync(filePath)) {
-    throw new Error('Scrip master file not found!');
+    throw new Error('Scrip master file not found and download failed!');
   }
   scripMaster = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   console.log('Scrip master loaded:', scripMaster.length, 'symbols');
   return scripMaster;
+};
+
+// Helper to parse DDMMMYYYY (e.g. 07JUL2026) into Date object for chronological sorting
+const parseExpiryDate = (expiryStr) => {
+  if (!expiryStr) return new Date(0);
+  const months = {
+    JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
+    JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11
+  };
+  const day = parseInt(expiryStr.substring(0, 2), 10);
+  const monthStr = expiryStr.substring(2, 5).toUpperCase();
+  const year = parseInt(expiryStr.substring(5), 10);
+  const month = months[monthStr] !== undefined ? months[monthStr] : 0;
+  return new Date(year, month, day);
 };
 
 // Get all expiry dates for an index
@@ -25,12 +95,16 @@ const getExpiryDates = (indexName) => {
     data
       .filter(s => s.name === indexName && s.instrumenttype === 'OPTIDX')
       .map(s => s.expiry)
-  )].sort();
+  )];
+  
+  // Sort chronologically ascending
+  expiries.sort((a, b) => parseExpiryDate(a) - parseExpiryDate(b));
+  
   return expiries;
 };
 
 // Get option chain for index + expiry
-const getOptionChain = async (indexName, expiry) => {
+const getOptionChain = async (indexName, expiry, userId) => {
   const data = loadScripMaster();
 
   // Filter options for this index and expiry
@@ -49,7 +123,9 @@ const getOptionChain = async (indexName, expiry) => {
   
   let livePrices = {};
   try {
-    const { authToken } = await connectAngelOne();
+    const { authToken } = await connectAngelOne(userId);
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
     
     // Fetch in batches of 50 (Angel One limit)
     const batchSize = 50;
@@ -68,7 +144,7 @@ const getOptionChain = async (indexName, expiry) => {
             'X-ClientLocalIP': '192.168.1.5',
             'X-ClientPublicIP': '106.193.147.98',
             'X-MACAddress': 'fe80::216e:6507:4b90:3719',
-            'X-PrivateKey': process.env.ANGEL_API_KEY
+            'X-PrivateKey': user.angelApiKey
           }
         }
       );
@@ -228,13 +304,15 @@ const getCandleData = async (symboltoken, exchange, interval, userId) => {
     
     let fromDate = new Date();
     if (interval === 'ONE_DAY') {
-      fromDate.setDate(fromDate.getDate() - 90); // Last 90 days
+      fromDate.setDate(fromDate.getDate() - 180); // Last 180 days
     } else if (interval === 'ONE_HOUR') {
-      fromDate.setDate(fromDate.getDate() - 15); // Last 15 days
+      fromDate.setDate(fromDate.getDate() - 30);  // Last 30 days
     } else if (interval === 'FIFTEEN_MINUTE') {
-      fromDate.setDate(fromDate.getDate() - 5);  // Last 5 days
+      fromDate.setDate(fromDate.getDate() - 15);  // Last 15 days
+    } else if (interval === 'FIVE_MINUTE') {
+      fromDate.setDate(fromDate.getDate() - 15);  // Last 15 days
     } else {
-      fromDate.setDate(fromDate.getDate() - 2);  // Last 2 days (for 1m and 5m)
+      fromDate.setDate(fromDate.getDate() - 10);  // Last 10 days (for 1m)
     }
     const fromDateStr = formatDateForAngel(fromDate);
     

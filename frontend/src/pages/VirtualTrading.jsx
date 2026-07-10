@@ -3,9 +3,7 @@ import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import StockChart from '../components/StockChart';
-
-const API = 'http://localhost:5000/api';
-const SOCKET_URL = 'http://localhost:5000';
+import { API, SOCKET_URL } from '../config/api';
 
 const INDEX_TOKENS = {
   'NIFTY': '99926000',
@@ -85,6 +83,7 @@ function VirtualTrading() {
 
     socket.on('connect', () => {
       setIsLive(true);
+      socket.emit('register-user', { token });
       if (optionChainRef.current.length > 0) {
         const newTokens = [];
         optionChainRef.current.forEach(row => {

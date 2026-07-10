@@ -13,6 +13,7 @@ import Alerts from './pages/Alerts';
 import Account from './pages/Account';
 import Home from './pages/Home';
 import ChatBot from './components/ChatBot';
+import { API, SOCKET_URL } from './config/api';
 import './App.css';
 
 // Protected Route wrapper
@@ -34,7 +35,7 @@ function HomeRedirect() {
       setLoading(false);
       return;
     }
-    axios.get('http://localhost:5000/api/auth/me', { headers })
+    axios.get(`${API}/auth/me`, { headers })
       .then(res => {
         if (res.data.success && res.data.user) {
           setMode(res.data.user.tradingMode || 'virtual');
@@ -70,7 +71,7 @@ function Navbar() {
   const fetchUnseenCount = async () => {
     if (!token) return;
     try {
-      const res = await axios.get('http://localhost:5000/api/alerts/unseen', {
+      const res = await axios.get(`${API}/alerts/unseen`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success) {
@@ -84,7 +85,7 @@ function Navbar() {
   const fetchProfileMode = async () => {
     if (!token) return;
     try {
-      const res = await axios.get('http://localhost:5000/api/auth/me', {
+      const res = await axios.get(`${API}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data.success && res.data.user) {
@@ -101,7 +102,7 @@ function Navbar() {
     fetchUnseenCount();
     fetchProfileMode();
 
-    const socket = io('http://localhost:5000', { transports: ['websocket', 'polling'] });
+    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
     socket.on('connect', () => {
       socket.emit('register-user', { token });
     });

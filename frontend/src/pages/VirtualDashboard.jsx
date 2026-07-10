@@ -3,9 +3,7 @@ import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import StockChart from '../components/StockChart';
-
-const API = 'http://localhost:5000/api';
-const SOCKET_URL = 'http://localhost:5000';
+import { API, SOCKET_URL } from '../config/api';
 
 const checkMarketOpen = () => {
   const istTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -55,6 +53,7 @@ function VirtualDashboard() {
 
     socket.on('connect', () => {
       console.log('Virtual Dashboard Socket connected');
+      socket.emit('register-user', { token });
       if (positionsRef.current.length > 0) {
         const tokens = positionsRef.current.map(pos => pos.token).filter(Boolean);
         if (tokens.length > 0) {

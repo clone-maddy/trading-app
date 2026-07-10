@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
-
-const API = 'http://localhost:5000/api';
+import { API } from '../config/api';
 
 function Account() {
   const [profile, setProfile] = useState({
