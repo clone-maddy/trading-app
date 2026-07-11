@@ -192,9 +192,21 @@ const getOptionChain = async (indexName, expiry, userId) => {
   const cacheKey = `${indexName.toUpperCase()}_${expiry.toUpperCase()}`;
 
   // If market is closed, immediately return cached option chain to bypass API calls on holidays/weekends
-  if (!isMarketOpen() && optionChainCache[cacheKey]) {
-    console.log(`⚡ Bypassing API and serving cached option chain for ${cacheKey} (Market Closed)`);
-    return optionChainCache[cacheKey];
+  if (!isMarketOpen()) {
+    if (optionChainCache[cacheKey]) {
+      console.log(`⚡ Bypassing API and serving cached option chain for ${cacheKey} (Market Closed)`);
+      return optionChainCache[cacheKey];
+    }
+    
+    // Sibling Fallback: If no cache exists for this specific expiry, load any other cached expiry for this index
+    const prefix = `${indexName.toUpperCase()}_`;
+    const siblingKey = Object.keys(optionChainCache).find(
+      k => k.startsWith(prefix) && optionChainCache[k] && optionChainCache[k].length > 0
+    );
+    if (siblingKey) {
+      console.log(`⚡ Sibling cache match found: ${siblingKey}. Serving as fallback for ${cacheKey} (Market Closed)`);
+      return optionChainCache[siblingKey];
+    }
   }
 
   const data = loadScripMaster();
