@@ -45,6 +45,11 @@ const monitorStates = {
 const isMarketOpen = () => {
   const now = new Date();
   const IST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  
+  // Weekend Check (0 = Sunday, 6 = Saturday)
+  const day = IST.getDay();
+  if (day === 0 || day === 6) return false;
+
   const hours = IST.getHours();
   const minutes = IST.getMinutes();
   const totalMinutes = hours * 60 + minutes;

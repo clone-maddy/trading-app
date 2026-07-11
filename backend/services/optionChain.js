@@ -36,19 +36,59 @@ const checkAndDownloadScripMaster = async () => {
       });
 
       await new Promise((resolve, reject) => {
-        const writer = fs.createWriteStream(tempPath);
-        response.data.pipe(writer);
-        writer.on('finish', () => {
+        let buffer = '';
+        let filteredScrips = [];
+        const indexNames = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY']);
+        
+        response.data.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+          
+          let pos;
+          while ((pos = buffer.indexOf('},{')) !== -1) {
+            let objStr = buffer.substring(0, pos + 1);
+            if (objStr.startsWith('[')) {
+              objStr = objStr.substring(1);
+            }
+            
+            try {
+              const scrip = JSON.parse(objStr);
+              if (indexNames.has(scrip.name)) {
+                filteredScrips.push(scrip);
+              }
+            } catch (e) {
+              // Ignore parse errors on truncated items
+            }
+            
+            buffer = buffer.substring(pos + 2);
+          }
+        });
+
+        response.data.on('end', () => {
+          if (buffer) {
+            let objStr = buffer;
+            if (objStr.endsWith(']')) {
+              objStr = objStr.substring(0, objStr.length - 1);
+            }
+            try {
+              const scrip = JSON.parse(objStr);
+              if (indexNames.has(scrip.name)) {
+                filteredScrips.push(scrip);
+              }
+            } catch (e) {}
+          }
+
           try {
+            fs.writeFileSync(tempPath, JSON.stringify(filteredScrips));
             fs.renameSync(tempPath, filePath);
-            console.log('✅ Fresh scrip master downloaded and replaced atomically!');
-            scripMaster = null; // Clear cache
+            console.log(`✅ Fresh scrip master downloaded, filtered, and saved. Symbols count: ${filteredScrips.length}`);
+            scripMaster = filteredScrips; // Update cache
             resolve();
           } catch (err) {
             reject(err);
           }
         });
-        writer.on('error', (err) => {
+
+        response.data.on('error', (err) => {
           try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
           reject(err);
         });
@@ -91,9 +131,16 @@ const parseExpiryDate = (expiryStr) => {
 // Get all expiry dates for an index
 const getExpiryDates = (indexName) => {
   const data = loadScripMaster();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // start of today
+
   const expiries = [...new Set(
     data
-      .filter(s => s.name === indexName && s.instrumenttype === 'OPTIDX')
+      .filter(s => 
+        s.name === indexName && 
+        s.instrumenttype === 'OPTIDX' &&
+        parseExpiryDate(s.expiry) >= today
+      )
       .map(s => s.expiry)
   )];
   
