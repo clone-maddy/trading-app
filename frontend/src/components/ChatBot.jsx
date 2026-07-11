@@ -87,33 +87,16 @@ function ChatBot() {
     }
   };
 
-  // Do not show chatbot if user is not logged in
   if (!token) return null;
 
   return (
-    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 1000, fontFamily: "'Outfit', sans-serif" }}>
+    <div className="chatbot-container">
       
       {/* Floating Toggle Button */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #10b981 0%, #2563eb 100%)',
-            color: '#ffffff',
-            border: 'none',
-            fontSize: '28px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'transform 0.2s'
-          }}
-          onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.08)'}
-          onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          className="chatbot-toggle"
         >
           💬
         </button>
@@ -121,17 +104,7 @@ function ChatBot() {
 
       {/* Expanded Chat Window */}
       {isOpen && (
-        <div style={{
-          width: '380px',
-          height: '520px',
-          background: '#ffffff',
-          borderRadius: '16px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-          border: '1px solid #e2e8f0',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}>
+        <div className="chatbot-window">
           
           {/* Header */}
           <div style={{

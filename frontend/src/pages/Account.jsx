@@ -179,7 +179,7 @@ function Account() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <div className="account-grid">
 
             {/* Left Column: Personal info & Telegram */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
