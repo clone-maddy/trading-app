@@ -510,18 +510,18 @@ function VirtualTrading() {
             <table className="chain-table">
               <thead>
                 <tr>
-                  <th colSpan="3" className="ce-header" style={{ textAlign: 'center', background: '#e8f5e9', color: '#2e7d32' }}>CALL (CE)</th>
+                  <th colSpan={window.innerWidth <= 768 ? 1 : 3} className="ce-header" style={{ textAlign: 'center', background: '#e8f5e9', color: '#2e7d32' }}>CALL (CE)</th>
                   <th className="strike-header" style={{ textAlign: 'center', background: '#f5f5f5', color: '#616161' }}>STRIKE</th>
-                  <th colSpan="3" className="pe-header" style={{ textAlign: 'center', background: '#ffebee', color: '#c62828' }}>PUT (PE)</th>
+                  <th colSpan={window.innerWidth <= 768 ? 1 : 3} className="pe-header" style={{ textAlign: 'center', background: '#ffebee', color: '#c62828' }}>PUT (PE)</th>
                 </tr>
                 <tr>
-                  <th>OI</th>
-                  <th>Volume</th>
+                  <th className="mobile-hide">OI</th>
+                  <th className="mobile-hide">Volume</th>
                   <th>LTP</th>
                   <th></th>
                   <th>LTP</th>
-                  <th>Volume</th>
-                  <th>OI</th>
+                  <th className="mobile-hide">Volume</th>
+                  <th className="mobile-hide">OI</th>
                 </tr>
               </thead>
               <tbody>
@@ -530,8 +530,8 @@ function VirtualTrading() {
                   return (
                     <tr key={index} className={atm ? 'atm-row' : ''} ref={atm ? atmRef : null}>
                       {/* CALL CE SIDE */}
-                      <td>{row.ce?.oi ? Number(row.ce.oi).toLocaleString('en-IN') : '-'}</td>
-                      <td>{row.ce?.volume ? Number(row.ce.volume).toLocaleString('en-IN') : '-'}</td>
+                      <td className="mobile-hide">{row.ce?.oi ? Number(row.ce.oi).toLocaleString('en-IN') : '-'}</td>
+                      <td className="mobile-hide">{row.ce?.volume ? Number(row.ce.volume).toLocaleString('en-IN') : '-'}</td>
                       <td className={`clickable-cell buy-trigger ce-ltp ${flashingCells.has(`ce-${row.ce?.token}`) ? 'price-flash' : ''}`}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                           <span style={{ flex: 1, paddingRight: '8px' }} onClick={() => row.ce && openTradeModal(row.ce, 'CE', 'BUY')}>
@@ -610,8 +610,8 @@ function VirtualTrading() {
                           )}
                         </div>
                       </td>
-                      <td>{row.pe?.volume ? Number(row.pe.volume).toLocaleString('en-IN') : '-'}</td>
-                      <td>{row.pe?.oi ? Number(row.pe.oi).toLocaleString('en-IN') : '-'}</td>
+                      <td className="mobile-hide">{row.pe?.volume ? Number(row.pe.volume).toLocaleString('en-IN') : '-'}</td>
+                      <td className="mobile-hide">{row.pe?.oi ? Number(row.pe.oi).toLocaleString('en-IN') : '-'}</td>
                     </tr>
                   );
                 })}

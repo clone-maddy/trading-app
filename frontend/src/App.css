@@ -836,38 +836,75 @@ button {
   background-color: rgba(239, 68, 68, 0.12) !important;
 }
 
-/* Responsive / Mobile Layout Hardening */
+/* Bottom Navbar for Mobile */
+.bottom-navbar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 62px;
+  background-color: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 999;
+  box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.08);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-nav-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  flex: 1;
+  gap: 3px;
+  height: 100%;
+}
+
+.bottom-nav-link:hover {
+  color: #2563eb;
+}
+
+.bottom-nav-icon {
+  font-size: 18px;
+}
+
+/* Responsive Overrides */
 @media (max-width: 768px) {
+  body {
+    padding-bottom: 80px !important;
+  }
+
   .navbar {
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 20px;
-    text-align: center;
-  }
-  
-  .nav-menu {
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 12px 16px;
+    padding: 12px 20px !important;
   }
 
-  .nav-link {
-    font-size: 12px;
+  .navbar .nav-menu {
+    display: none !important;
   }
 
-  .nav-group {
-    padding: 2px 8px;
-    gap: 8px;
+  .bottom-navbar {
+    display: flex !important;
+  }
+
+  .mobile-hide {
+    display: none !important;
+  }
+
+  .app {
+    padding: 16px;
   }
 
   .header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
-  }
-
-  .app {
-    padding: 16px;
   }
 
   .pnl-card h1 {
@@ -910,13 +947,13 @@ button {
   }
 
   .chain-table td, .chain-table th {
-    padding: 4px 6px;
-    font-size: 11px;
+    padding: 6px 8px;
+    font-size: 13px;
   }
 
   .atm-tag {
-    font-size: 7px;
-    margin-left: 2px;
-    padding: 1px 2px;
+    font-size: 8px;
+    margin-left: 4px;
+    padding: 1px 3px;
   }
 }

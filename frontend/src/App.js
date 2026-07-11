@@ -257,7 +257,53 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatBot />
+      <BottomNavbar />
     </Router>
+  );
+}
+
+function BottomNavbar() {
+  const token = localStorage.getItem('token');
+  const [tradingMode, setTradingMode] = useState('virtual');
+  const [isVerified, setIsVerified] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        if (res.data.success && res.data.user) {
+          setTradingMode(res.data.user.tradingMode || 'virtual');
+          setIsVerified(res.data.user.isVerified !== false);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+
+  if (!token || !isVerified) return null;
+
+  return (
+    <div className="bottom-navbar">
+      <Link className="bottom-nav-link" to={tradingMode === 'real' ? '/real' : '/virtual'}>
+        <span className="bottom-nav-icon">📊</span>
+        <span className="bottom-nav-label">Dashboard</span>
+      </Link>
+      <Link className="bottom-nav-link" to={tradingMode === 'real' ? '/real-options' : '/virtual-options'}>
+        <span className="bottom-nav-icon">⛓️</span>
+        <span className="bottom-nav-label">Chain</span>
+      </Link>
+      <Link className="bottom-nav-link" to={tradingMode === 'real' ? '/real-analytics' : '/virtual-analytics'}>
+        <span className="bottom-nav-icon">📈</span>
+        <span className="bottom-nav-label">Analytics</span>
+      </Link>
+      <Link className="bottom-nav-link" to="/alerts">
+        <span className="bottom-nav-icon">🔔</span>
+        <span className="bottom-nav-label">Alerts</span>
+      </Link>
+      <Link className="bottom-nav-link" to="/account">
+        <span className="bottom-nav-icon">⚙️</span>
+        <span className="bottom-nav-label">Account</span>
+      </Link>
+    </div>
   );
 }
 
