@@ -26,6 +26,7 @@ function VirtualDashboard() {
   const [history, setHistory] = useState([]);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [activeTab, setActiveTab] = useState('positions');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(window.innerWidth > 768);
 
   const [globalSettings, setGlobalSettings] = useState({
     targetProfit: '',
@@ -357,79 +358,90 @@ function VirtualDashboard() {
 
       {/* Global Settings */}
       <div className="settings-card">
-        <h2>⚙️ Global P&L Monitor Settings (Virtual)</h2>
-        <p className="subtitle">Automatically exit all virtual positions when total P&L hits these limits</p>
-        <div className="settings-grid">
-          <div className="input-group">
-            <label>🎯 Target Profit (₹)</label>
-            <input
-              type="number"
-              placeholder="e.g. 10000"
-              value={globalSettings.targetProfit}
-              onChange={(e) => setGlobalSettings({...globalSettings, targetProfit: e.target.value})}
-            />
-          </div>
-          <div className="input-group">
-            <label>🛑 Stop Loss (₹)</label>
-            <input
-              type="number"
-              placeholder="e.g. -7000"
-              value={globalSettings.stopLoss}
-              onChange={(e) => setGlobalSettings({...globalSettings, stopLoss: e.target.value})}
-            />
-          </div>
-          <div className="input-group">
-            <label>📈 Partial Profit At (₹)</label>
-            <input
-              type="number"
-              placeholder="e.g. 5000"
-              value={globalSettings.partialProfitAt}
-              onChange={(e) => setGlobalSettings({...globalSettings, partialProfitAt: e.target.value})}
-            />
-          </div>
-          <div className="input-group">
-            <label>📊 Partial Profit %</label>
-            <input
-              type="number"
-              placeholder="e.g. 50"
-              value={globalSettings.partialProfitPercent}
-              onChange={(e) => setGlobalSettings({...globalSettings, partialProfitPercent: e.target.value})}
-            />
-          </div>
-        </div>
-        
-        <div className="checkbox-group" style={{ margin: '15px 0', display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={globalSettings.useTrailingSL}
-              onChange={(e) => setGlobalSettings({...globalSettings, useTrailingSL: e.target.checked})}
-              style={{ width: '18px', height: '18px' }}
-            />
-            🛡️ Enable Trailing Stop Loss
-          </label>
-          {globalSettings.useTrailingSL && (
-            <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-              <label style={{ fontSize: '13px' }}>Trail Step (₹):</label>
-              <input
-                type="number"
-                placeholder="e.g. 1000"
-                value={globalSettings.trailAmount}
-                onChange={(e) => setGlobalSettings({...globalSettings, trailAmount: e.target.value})}
-                style={{ width: '100px', padding: '6px', background: '#0f0f1a', border: '1px solid #2a2a3d', color: '#fff', borderRadius: '6px', margin: 0 }}
-              />
-            </div>
-          )}
+        <div 
+          onClick={() => setIsSettingsOpen(!isSettingsOpen)} 
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+        >
+          <h2 style={{ margin: 0 }}>⚙️ Global P&L Monitor Settings (Virtual)</h2>
+          <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{isSettingsOpen ? '▲' : '▼'}</span>
         </div>
 
-        <div className="buttons">
-          <button className="btn-start" onClick={startMonitor} disabled={isMonitoring}>
-            ▶ Start Monitor
-          </button>
-          <button className="btn-stop" onClick={stopMonitor} disabled={!isMonitoring}>
-            ⏹ Stop Monitor
-          </button>
-        </div>
+        {isSettingsOpen && (
+          <>
+            <p className="subtitle" style={{ marginTop: '10px' }}>Automatically exit all virtual positions when total P&L hits these limits</p>
+            <div className="settings-grid">
+              <div className="input-group">
+                <label>🎯 Target Profit (₹)</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 10000"
+                  value={globalSettings.targetProfit}
+                  onChange={(e) => setGlobalSettings({...globalSettings, targetProfit: e.target.value})}
+                />
+              </div>
+              <div className="input-group">
+                <label>🛑 Stop Loss (₹)</label>
+                <input
+                  type="number"
+                  placeholder="e.g. -7000"
+                  value={globalSettings.stopLoss}
+                  onChange={(e) => setGlobalSettings({...globalSettings, stopLoss: e.target.value})}
+                />
+              </div>
+              <div className="input-group">
+                <label>📈 Partial Profit At (₹)</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 5000"
+                  value={globalSettings.partialProfitAt}
+                  onChange={(e) => setGlobalSettings({...globalSettings, partialProfitAt: e.target.value})}
+                />
+              </div>
+              <div className="input-group">
+                <label>📊 Partial Profit %</label>
+                <input
+                  type="number"
+                  placeholder="e.g. 50"
+                  value={globalSettings.partialProfitPercent}
+                  onChange={(e) => setGlobalSettings({...globalSettings, partialProfitPercent: e.target.value})}
+                />
+              </div>
+            </div>
+            
+            <div className="checkbox-group" style={{ margin: '15px 0', display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={globalSettings.useTrailingSL}
+                  onChange={(e) => setGlobalSettings({...globalSettings, useTrailingSL: e.target.checked})}
+                  style={{ width: '18px', height: '18px' }}
+                />
+                🛡️ Enable Trailing Stop Loss
+              </label>
+              {globalSettings.useTrailingSL && (
+                <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <label style={{ fontSize: '13px' }}>Trail Step (₹):</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 1000"
+                    value={globalSettings.trailAmount}
+                    onChange={(e) => setGlobalSettings({...globalSettings, trailAmount: e.target.value})}
+                    style={{ width: '100px', padding: '6px', background: '#0f0f1a', border: '1px solid #2a2a3d', color: '#fff', borderRadius: '6px', margin: 0 }}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="buttons">
+              <button className="btn-start" onClick={startMonitor} disabled={isMonitoring}>
+                ▶ Start Monitor
+              </button>
+              <button className="btn-stop" onClick={stopMonitor} disabled={!isMonitoring}>
+                ⏹ Stop Monitor
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Tabs */}

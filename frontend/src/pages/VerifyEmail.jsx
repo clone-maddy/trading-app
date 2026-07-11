@@ -68,6 +68,10 @@ function VerifyEmail() {
         <h1>🔑 Verify Your Email</h1>
         <p className="login-subtitle">We have sent a 6-digit verification code to your email address.</p>
 
+        <div style={{ margin: '15px 0 5px', padding: '10px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', color: '#b45309', fontSize: '11px', textAlign: 'center', lineHeight: '1.4' }}>
+          ✉️ Cannot find the email? <b>Please check your Spam or Junk folder</b> and mark it as "Not Spam" to receive future codes directly in your inbox.
+        </div>
+
         <form onSubmit={handleVerify} style={{ marginTop: '20px' }}>
           <div style={{ marginBottom: '20px' }}>
             <input

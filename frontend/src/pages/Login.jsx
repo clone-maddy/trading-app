@@ -4,6 +4,8 @@ import toast, { Toaster } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { API } from '../config/api';
 
+import logo from '../assets/logo.png';
+
 function Login() {
   const [isLogin, setIsLogin] = useState(true);
   const [form, setForm] = useState({ name: '', email: '', password: '' });
@@ -49,7 +51,10 @@ function Login() {
     <div className="login-page">
       <Toaster position="top-right" />
       <div className="login-card">
-        <h1>Chanakya</h1>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '15px' }}>
+          <img src={logo} alt="Chanakya Logo" style={{ width: '90px', height: '90px', display: 'block', borderRadius: '16px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.15)' }} />
+          <h1 style={{ marginTop: '12px' }}>Chanakya</h1>
+        </div>
         <p className="login-subtitle">Strategic options analysis and trading platform</p>
 
         <div className="login-tabs">

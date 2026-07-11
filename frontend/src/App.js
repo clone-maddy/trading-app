@@ -16,6 +16,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import ChatBot from './components/ChatBot';
 import { API, SOCKET_URL } from './config/api';
 import './App.css';
+import logoHorizontal from './assets/logo-horizontal.png';
 
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
@@ -156,7 +157,9 @@ function Navbar() {
   if (!isVerified) {
     return (
       <nav className="navbar">
-        <span className="nav-brand">Chanakya</span>
+        <span className="nav-brand" style={{ display: 'flex', alignItems: 'center' }}>
+          <img src={logoHorizontal} alt="Chanakya Logo" style={{ height: '36px', width: 'auto', display: 'block' }} />
+        </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
           <button className="btn-logout" onClick={handleLogout}>Logout</button>
         </div>
@@ -166,7 +169,9 @@ function Navbar() {
 
   return (
     <nav className="navbar">
-      <Link className="nav-brand" to="/" style={{ textDecoration: 'none' }}>Chanakya</Link>
+      <Link className="nav-brand" to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+        <img src={logoHorizontal} alt="Chanakya Logo" style={{ height: '36px', width: 'auto', display: 'block' }} />
+      </Link>
       <div className="nav-menu">
         {tradingMode === 'real' ? (
           <>

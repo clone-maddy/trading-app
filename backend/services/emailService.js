@@ -42,7 +42,10 @@ const sendWelcomeEmail = async (email, name) => {
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
           <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-            <h1 style="margin: 0; color: #2563eb; font-size: 24px;">💼 Chanakya</h1>
+            <h1 style="margin: 0; color: #2563eb; font-size: 24px; display: inline-flex; align-items: center; gap: 8px; vertical-align: middle;">
+              <img src="${process.env.FRONTEND_URL || 'http://localhost:3001'}/logo-email.png" alt="Chanakya Logo" style="height: 32px; width: auto; vertical-align: middle; border: none;" onerror="this.style.display='none';" />
+              <span style="vertical-align: middle; margin-left: 6px;">Chanakya</span>
+            </h1>
             <p style="margin: 5px 0 0; color: #64748b; font-size: 14px;">Next-Generation Algo Trading Platform</p>
           </div>
           
@@ -63,7 +66,7 @@ const sendWelcomeEmail = async (email, name) => {
           <p style="font-size: 15px; line-height: 1.6; margin-bottom: 20px;">To connect your Telegram Bot and enable phone notifications, please head over to the <b>Account Settings</b> page inside your dashboard.</p>
           
           <div style="text-align: center; margin-bottom: 25px;">
-            <a href="http://localhost:3001/account" style="display: inline-block; padding: 12px 30px; background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 14px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25); border: none;">
+            <a href="${process.env.FRONTEND_URL || 'http://localhost:3001'}/account" style="display: inline-block; padding: 12px 30px; background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 14px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25); border: none;">
               ⚙️ Configure Account Settings
             </a>
           </div>
@@ -99,8 +102,11 @@ const sendBroadcastEmail = async (subject, contentHtml) => {
           subject: subject,
           html: `
             <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
-              <div style="border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-                <h1 style="margin: 0; color: #2563eb; font-size: 20px; text-align: center;">💼 Chanakya Platform Alert</h1>
+              <div style="border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px; text-align: center;">
+                <h1 style="margin: 0; color: #2563eb; font-size: 20px; display: inline-flex; align-items: center; gap: 8px; vertical-align: middle;">
+                  <img src="${process.env.FRONTEND_URL || 'http://localhost:3001'}/logo-email.png" alt="Chanakya Logo" style="height: 28px; width: auto; vertical-align: middle; border: none;" onerror="this.style.display='none';" />
+                  <span style="vertical-align: middle; margin-left: 6px;">Chanakya Platform Alert</span>
+                </h1>
               </div>
               
               <p style="font-size: 15px; line-height: 1.6; margin-bottom: 15px;">Hello <b>${user.name}</b>,</p>
@@ -142,7 +148,10 @@ const sendVerificationEmail = async (email, name, code) => {
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
           <div style="text-align: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px;">
-            <h1 style="margin: 0; color: #2563eb; font-size: 24px;">💼 Chanakya</h1>
+            <h1 style="margin: 0; color: #2563eb; font-size: 24px; display: inline-flex; align-items: center; gap: 8px; vertical-align: middle;">
+              <img src="${process.env.FRONTEND_URL || 'http://localhost:3001'}/logo-email.png" alt="Chanakya Logo" style="height: 32px; width: auto; vertical-align: middle; border: none;" onerror="this.style.display='none';" />
+              <span style="vertical-align: middle; margin-left: 6px;">Chanakya</span>
+            </h1>
             <p style="margin: 5px 0 0; color: #64748b; font-size: 14px;">Email Verification Required</p>
           </div>
           
