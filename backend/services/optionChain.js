@@ -6,6 +6,27 @@ const User = require('../models/User');
 
 let scripMaster = null;
 
+const CACHE_FILE = path.join(__dirname, '..', 'optionchain_cache.json');
+let optionChainCache = {};
+
+// Load cache from disk on startup
+try {
+  if (fs.existsSync(CACHE_FILE)) {
+    optionChainCache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    console.log('✅ Option chain persistent cache loaded.');
+  }
+} catch (e) {
+  console.log('Failed to load option chain cache:', e.message);
+}
+
+const saveOptionChainCache = () => {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(optionChainCache));
+  } catch (e) {
+    console.log('Failed to save option chain cache:', e.message);
+  }
+};
+
 // Automatically download fresh scrip master if older than 24 hours on load
 const checkAndDownloadScripMaster = async () => {
   const filePath = path.join(__dirname, '..', 'scripmaster.json');
@@ -150,8 +171,32 @@ const getExpiryDates = (indexName) => {
   return expiries;
 };
 
+const isMarketOpen = () => {
+  const now = new Date();
+  const IST = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  
+  // Weekend Check (0 = Sunday, 6 = Saturday)
+  const day = IST.getDay();
+  if (day === 0 || day === 6) return false;
+
+  const hours = IST.getHours();
+  const minutes = IST.getMinutes();
+  const totalMinutes = hours * 60 + minutes;
+  const marketOpen = 9 * 60 + 15;   // 9:15 AM
+  const marketClose = 15 * 60 + 30; // 3:30 PM
+  return totalMinutes >= marketOpen && totalMinutes <= marketClose;
+};
+
 // Get option chain for index + expiry
 const getOptionChain = async (indexName, expiry, userId) => {
+  const cacheKey = `${indexName.toUpperCase()}_${expiry.toUpperCase()}`;
+
+  // If market is closed, immediately return cached option chain to bypass API calls on holidays/weekends
+  if (!isMarketOpen() && optionChainCache[cacheKey]) {
+    console.log(`⚡ Bypassing API and serving cached option chain for ${cacheKey} (Market Closed)`);
+    return optionChainCache[cacheKey];
+  }
+
   const data = loadScripMaster();
 
   // Filter options for this index and expiry
@@ -248,6 +293,17 @@ const getOptionChain = async (indexName, expiry, userId) => {
     };
   });
 
+  // Check if we successfully fetched at least some live prices
+  const hasLivePrices = Object.values(livePrices).some(p => p.ltp > 0);
+
+  if (hasLivePrices) {
+    optionChainCache[cacheKey] = chain;
+    saveOptionChainCache();
+  } else if (optionChainCache[cacheKey]) {
+    console.log(`⚠️ Option chain API failed or empty. Serving cached option chain for ${cacheKey}`);
+    return optionChainCache[cacheKey];
+  }
+
   return chain;
 };
 
@@ -286,6 +342,13 @@ const getLivePrice = async (token, userId) => {
   }
 };
 
+// In-memory cache for index spot prices to serve as fail-safe when API is down or on weekends
+const lastKnownSpots = {
+  'NIFTY': 24200,
+  'BANKNIFTY': 52500,
+  'FINNIFTY': 22000
+};
+
 // Get live spot price of index
 const getIndexSpotPrice = async (indexName, userId) => {
   const tokenMap = {
@@ -299,7 +362,7 @@ const getIndexSpotPrice = async (indexName, userId) => {
   try {
     const { authToken } = await connectAngelOne(userId);
     const user = await User.findById(userId);
-    if (!user) return 0;
+    if (!user) return lastKnownSpots[indexName.toUpperCase()] || 0;
 
     const response = await axios.post(
       'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/',
@@ -320,12 +383,16 @@ const getIndexSpotPrice = async (indexName, userId) => {
     );
 
     if (response.data.status && response.data.data.fetched.length > 0) {
-      return response.data.data.fetched[0].ltp;
+      const ltp = response.data.data.fetched[0].ltp;
+      if (ltp > 0) {
+        lastKnownSpots[indexName.toUpperCase()] = ltp;
+      }
+      return ltp;
     }
-    return 0;
+    return lastKnownSpots[indexName.toUpperCase()] || 0;
   } catch (error) {
     console.log(`Error fetching spot price for ${indexName} (User ${userId}):`, error.message);
-    return 0;
+    return lastKnownSpots[indexName.toUpperCase()] || 0;
   }
 };
 
